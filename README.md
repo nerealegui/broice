@@ -12,7 +12,11 @@ Broice runs the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) ONNX model
 >
 > `Install Broice from https://github.com/nerealegui/broice/tree/main`
 
-Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions. Because this repository is currently private, you must have access to it before installing.
+Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions.
+
+Broice checks its public continuous GitHub Release hourly. Updates download silently,
+are checksum-verified, and preserve your settings and downloaded model files. Updated
+code becomes active the next time Copilot reloads extensions or restarts.
 
 <p align="center">
   <img src="docs/settings-panel.png" alt="Broice voice settings panel inside GitHub Copilot" width="480">
@@ -142,7 +146,10 @@ The script copies the extension into `~/.copilot/extensions/broice/`.
 
 ```bash
 mkdir -p ~/.copilot/extensions/broice
-cp -r extension.mjs speak.py config.json ui ~/.copilot/extensions/broice/
+cp extension.mjs auto-updater.mjs active-session.mjs \
+  speech-response-batcher.mjs speak.py config.json \
+  copilot-extension.json ~/.copilot/extensions/broice/
+cp -R ui ~/.copilot/extensions/broice/
 ```
 
 ### Then
@@ -214,6 +221,7 @@ broice/
 ├── extension.mjs        Copilot extension: tools, canvas, hooks, HTTP server
 ├── speech-response-batcher.mjs
 │                        Holds the final reply until the session becomes idle
+├── auto-updater.mjs      Checks and installs continuous release updates
 ├── speak.py             Python worker: ONNX inference + afplay playback
 ├── ui/index.html        Settings panel frontend (HTML/CSS/JS, Primer styled)
 ├── config.json          Persisted settings
@@ -251,7 +259,10 @@ The entire frontend lives in a single self-contained file: `ui/index.html`. Edit
 
 ## Privacy
 
-Broice makes exactly two network requests, both on first install, both to GitHub Releases, to download the model weights. After that it is fully offline. Your prompts, Copilot's responses, and all generated audio stay on your machine.
+Broice downloads its model and voice data from GitHub Releases during first-time setup. It
+also checks the public Broice release manifest hourly and downloads an update package only
+when `main` has changed. Your prompts, Copilot responses, settings, model data, and generated
+audio stay on your machine.
 
 ---
 

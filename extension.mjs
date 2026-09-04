@@ -10,6 +10,7 @@ import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { isForegroundSession } from "./active-session.mjs";
 import { createSpeechResponseBatcher } from "./speech-response-batcher.mjs";
+import { startAutoUpdater } from "./auto-updater.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -521,6 +522,8 @@ const session = await joinSession({
         },
     },
 });
+
+startAutoUpdater();
 
 void bootstrap(session).catch((error) => {
     console.error(`Broice bootstrap failed: ${getErrorMessage(error)}`);
