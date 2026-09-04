@@ -1,0 +1,59 @@
+name: Publish continuous release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: continuous-release
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build update package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/broice/ui
+          cp \
+            extension.mjs \
+            auto-updater.mjs \
+            active-session.mjs \
+            speech-response-batcher.mjs \
+            speak.py \
+            config.json \
+            copilot-extension.json \
+            install.sh \
+            README.md \
+            dist/broice/
+          cp ui/index.html dist/broice/ui/
+          printf '%s' "$GITHUB_SHA" > dist/broice/.broice-version
+          tar -czf dist/broice.tar.gz -C dist/broice .
+          checksum="$(sha256sum dist/broice.tar.gz | cut -d ' ' -f 1)"
+          printf '{"version":"%s","sha256":"%s"}\n' \
+            "$GITHUB_SHA" \
+            "$checksum" \
+            > dist/update-manifest.json
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view continuous >/dev/null 2>&1; then
+            gh release create continuous \
+              --title "Broice continuous release" \
+              --notes "Automatically packaged from the latest commit on main."
+          fi
+          gh release upload continuous dist/broice.tar.gz --clobber
+          gh release upload continuous dist/update-manifest.json --clobber
