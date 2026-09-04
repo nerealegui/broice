@@ -25,7 +25,7 @@ Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions
 | Feature | Description |
 |---|---|
 | **Fully local** | Neural inference runs on your Mac's CPU / Neural Engine via ONNX Runtime. Nothing is sent anywhere. |
-| **Auto-read responses** | Speaks each final Copilot reply once the full tool-use loop finishes, with Markdown cleaned for natural speech. |
+| **Auto-read responses** | Speaks each final Copilot reply once the full tool-use loop finishes, but only from the session currently shown. |
 | **Settings Canvas** | A native-feeling side panel (GitHub Primer styled) to pick a voice, tune speed, and test audio. |
 | **Mid-speech stop** | Cancel playback instantly via button, slash command, or natural language. |
 | **Smart speech rules** | Skips emojis, and reads `install.sh` as "install dot sh" instead of two separate words. |
@@ -164,7 +164,9 @@ Type any of these in Copilot chat:
 /voice     /tts     /voices     voice settings
 ```
 
-From the panel you can pick a voice, adjust speed from 0.7x to 1.5x, toggle automatic reading, edit and save your sample phrase, preview with **Test**, and cancel with **Stop**.
+From the panel you can pick a voice, adjust speed from 0.7x to 1.5x, toggle automatic reading, restrict speech to the session currently shown, edit and save your sample phrase, preview with **Test**, and cancel with **Stop**.
+
+By default, Broice checks Copilot's foreground session before starting playback and while audio is playing. Replies from background agents and sessions are skipped, and switching away from a speaking session stops its audio.
 
 ### Stop speech mid-sentence
 

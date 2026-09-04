@@ -3,5 +3,6 @@
   "speed": 1.0,
   "lang": "en-us",
   "auto_read": true,
+  "active_session_only": true,
   "sample_phrase": "Bro, this is a test of your local neural voice."
 }
