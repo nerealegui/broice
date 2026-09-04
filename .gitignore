@@ -1,0 +1,7 @@
+bin/
+*.onnx
+*.bin
+*.wav
+venv/
+__pycache__/
+.DS_Store
