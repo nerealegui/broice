@@ -21,6 +21,7 @@ const VOICES_PATH = path.join(BIN_DIR, "voices-v1.0.bin");
 const SCRIPT_PATH = path.join(__dirname, "speak.py");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const UI_PATH = path.join(__dirname, "ui", "index.html");
+const PYTHON_CANDIDATES = ["python3.13", "python3.12", "python3.11", "python3.10", "python3"];
 
 function loadConfig() {
     try {
@@ -46,47 +47,92 @@ function saveConfig(cfg) {
 let isReady = false;
 let isBootstrapping = false;
 
+async function isSupportedPython(pythonPath) {
+    try {
+        const { stdout } = await execFileAsync(pythonPath, [
+            "-c",
+            "import sys; print(int((3, 10) <= sys.version_info[:2] < (3, 14)))"
+        ]);
+        return stdout.trim() === "1";
+    } catch {
+        return false;
+    }
+}
+
+async function findCompatiblePython() {
+    for (const candidate of PYTHON_CANDIDATES) {
+        if (await isSupportedPython(candidate)) return candidate;
+    }
+    throw new Error("Broice requires Python 3.10 through 3.13. Install a compatible Python and reload the extension.");
+}
+
+async function hasPythonDependencies() {
+    if (!fs.existsSync(PYTHON_PATH)) return false;
+
+    try {
+        await execFileAsync(PYTHON_PATH, [
+            "-c",
+            "import kokoro_onnx, soundfile, sounddevice"
+        ]);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 async function bootstrap(session) {
     if (isReady || isBootstrapping) return;
     isBootstrapping = true;
 
-    if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
+    try {
+        if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
 
-    const needsVenv = !fs.existsSync(PYTHON_PATH);
-    const needsModel = !fs.existsSync(MODEL_PATH) || !fs.existsSync(VOICES_PATH);
+        const needsVenv = !fs.existsSync(PYTHON_PATH) || !(await isSupportedPython(PYTHON_PATH));
+        const needsDependencies = needsVenv || !(await hasPythonDependencies());
+        const needsModel = !fs.existsSync(MODEL_PATH) || !fs.existsSync(VOICES_PATH);
 
-    if (needsVenv || needsModel) {
-        await session.log("Setting up Broice dependencies and neural weights locally...", { level: "info" });
-        
-        if (needsVenv) {
-            await session.log("Creating local Python virtual environment...", { ephemeral: true });
-            await execFileAsync("python3", ["-m", "venv", VENV_DIR]);
-            await execFileAsync(path.join(VENV_DIR, "bin", "pip"), [
-                "install", "--upgrade", "pip", "kokoro-onnx", "soundfile", "sounddevice"
-            ]);
+        if (needsDependencies || needsModel) {
+            await session.log("Setting up Broice dependencies and neural weights locally...", { level: "info" });
+
+            if (needsVenv) {
+                const python = await findCompatiblePython();
+                await session.log(`Creating local Python virtual environment with ${python}...`, { ephemeral: true });
+                fs.rmSync(VENV_DIR, { recursive: true, force: true });
+                await execFileAsync(python, ["-m", "venv", VENV_DIR]);
+            }
+
+            if (needsDependencies) {
+                await session.log("Installing Broice Python dependencies...", { ephemeral: true });
+                const pipPath = path.join(VENV_DIR, "bin", "pip");
+                await execFileAsync(pipPath, ["install", "--upgrade", "pip"]);
+                await execFileAsync(pipPath, [
+                    "install", "--upgrade", "kokoro-onnx", "soundfile", "sounddevice"
+                ]);
+            }
+
+            if (!fs.existsSync(MODEL_PATH)) {
+                await session.log("Downloading the Broice speech model (~310MB)...", { ephemeral: true });
+                await execFileAsync("curl", [
+                    "-L", "-o", MODEL_PATH,
+                    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+                ]);
+            }
+
+            if (!fs.existsSync(VOICES_PATH)) {
+                await session.log("Downloading Broice voice data (~27MB)...", { ephemeral: true });
+                await execFileAsync("curl", [
+                    "-L", "-o", VOICES_PATH,
+                    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+                ]);
+            }
+
+            await session.log("Broice setup complete and ready!");
         }
 
-        if (!fs.existsSync(MODEL_PATH)) {
-            await session.log("Downloading the Broice speech model (~310MB)...", { ephemeral: true });
-            await execFileAsync("curl", [
-                "-L", "-o", MODEL_PATH,
-                "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
-            ]);
-        }
-
-        if (!fs.existsSync(VOICES_PATH)) {
-            await session.log("Downloading Broice voice data (~27MB)...", { ephemeral: true });
-            await execFileAsync("curl", [
-                "-L", "-o", VOICES_PATH,
-                "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
-            ]);
-        }
-
-        await session.log("Broice setup complete and ready!");
+        isReady = true;
+    } finally {
+        isBootstrapping = false;
     }
-
-    isReady = true;
-    isBootstrapping = false;
 }
 
 function cleanMarkdownForSpeech(md) {
@@ -143,7 +189,9 @@ function stopSpeech() {
 }
 
 async function speakText(text, voiceOverride = null, speedOverride = null, langOverride = null) {
-    if (!isReady) return;
+    if (!isReady) {
+        throw new Error("Broice speech is not ready. Check the extension log for bootstrap errors.");
+    }
     stopSpeech();
 
     const config = loadConfig();
@@ -154,7 +202,7 @@ async function speakText(text, voiceOverride = null, speedOverride = null, langO
     const cleaned = cleanMarkdownForSpeech(text);
     if (!cleaned) return;
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const child = execFile(PYTHON_PATH, [
             SCRIPT_PATH,
             cleaned,
@@ -165,6 +213,10 @@ async function speakText(text, voiceOverride = null, speedOverride = null, langO
         ], (err) => {
             if (activeSpeechChild === child) {
                 activeSpeechChild = null;
+            }
+            if (err) {
+                reject(err);
+                return;
             }
             resolve();
         });
@@ -335,7 +387,9 @@ const session = await joinSession({
     },
 });
 
-bootstrap(session).catch(() => {});
+void bootstrap(session).catch((error) => {
+    console.error(`Broice bootstrap failed: ${error.message}`);
+});
 
 session.on("assistant.message", async (event) => {
     finalResponseBatcher.queueAssistantMessage(event);
