@@ -23,6 +23,10 @@ const CONFIG_PATH = path.join(__dirname, "config.json");
 const UI_PATH = path.join(__dirname, "ui", "index.html");
 const PYTHON_CANDIDATES = ["python3.13", "python3.12", "python3.11", "python3.10", "python3"];
 
+function getErrorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+}
+
 function loadConfig() {
     try {
         if (fs.existsSync(CONFIG_PATH)) {
@@ -388,7 +392,7 @@ const session = await joinSession({
 });
 
 void bootstrap(session).catch((error) => {
-    console.error(`Broice bootstrap failed: ${error.message}`);
+    console.error(`Broice bootstrap failed: ${getErrorMessage(error)}`);
 });
 
 session.on("assistant.message", async (event) => {
@@ -396,7 +400,11 @@ session.on("assistant.message", async (event) => {
 });
 
 session.on("session.idle", async (event) => {
-    await finalResponseBatcher.finishInteraction(event);
+    try {
+        await finalResponseBatcher.finishInteraction(event);
+    } catch (error) {
+        console.error(`Broice speech playback failed: ${getErrorMessage(error)}`);
+    }
 });
 
 session.on("session.error", () => {
