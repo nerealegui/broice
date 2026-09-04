@@ -27,6 +27,7 @@ Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions
 | **Fully local** | Neural inference runs on your Mac's CPU / Neural Engine via ONNX Runtime. Nothing is sent anywhere. |
 | **Auto-read responses** | Speaks each final Copilot reply once the full tool-use loop finishes, but only from the session currently shown. |
 | **Settings Canvas** | A native-feeling side panel (GitHub Primer styled) to pick a voice, tune speed, and test audio. |
+| **Multi-session safe** | Serializes shared environment setup so simultaneous extension processes cannot corrupt the voice runtime. |
 | **Mid-speech stop** | Cancel playback instantly via button, slash command, or natural language. |
 | **Smart speech rules** | Skips emojis, and reads `install.sh` as "install dot sh" instead of two separate words. |
 | **Self-bootstrapping** | On first run it creates its own Python venv and downloads model weights automatically. |
@@ -53,6 +54,7 @@ Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions
 │     ┌──────────────────────────────────────────────────────────┐               │
 │     │  extension.mjs                                           │               │
 │     │  • Bootstraps venv + model weights on first launch       │               │
+│     │  • Coordinates setup safely across concurrent sessions   │               │
 │     │  • Buffers "assistant.message" until "session.idle"      │               │
 │     │  • Cleans Markdown, strips emojis, expands code names    │               │
 │     │  • Serves the Canvas UI over a local HTTP server         │               │
@@ -166,7 +168,7 @@ Type any of these in Copilot chat:
 
 From the panel you can pick a voice, adjust speed from 0.7x to 1.5x, toggle automatic reading, restrict speech to the session currently shown, edit and save your sample phrase, preview with **Test**, and cancel with **Stop**.
 
-By default, Broice checks Copilot's foreground session before starting playback and while audio is playing. Replies from background agents and sessions are skipped, and switching away from a speaking session stops its audio.
+By default, Broice checks Copilot's foreground session before starting playback and while audio is playing. When the host exposes foreground-session information, replies from background sessions are skipped and switching away from a speaking session stops its audio. Hosts that do not expose this information continue playing audio rather than suppressing every response.
 
 ### Stop speech mid-sentence
 
