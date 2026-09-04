@@ -119,7 +119,7 @@ ui/index.html  (GitHub Primer styled, light mode)
 
 - macOS (uses the built-in `afplay` for audio)
 - GitHub Copilot App or Copilot CLI
-- Python 3 available as `python3`
+- Python 3.10–3.13 (Broice automatically selects a compatible `python3.x` executable)
 - ~400 MB free disk space for the model weights
 
 ---
