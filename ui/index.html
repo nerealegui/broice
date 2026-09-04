@@ -348,6 +348,11 @@
     <label for="auto_read">Automatically read Copilot responses</label>
   </div>
 
+  <div class="checkbox-group">
+    <input type="checkbox" id="active_session_only" checked>
+    <label for="active_session_only">Only speak for the session currently shown</label>
+  </div>
+
   <div class="form-group">
     <label for="test-text">Sample phrase</label>
     <input type="text" id="test-text" value="Bro, this is a test of your local neural voice.">
@@ -377,6 +382,7 @@
   const speedSlider = document.getElementById('speed');
   const speedVal = document.getElementById('speed-val');
   const autoReadCheck = document.getElementById('auto_read');
+  const activeSessionOnlyCheck = document.getElementById('active_session_only');
   const testText = document.getElementById('test-text');
   const testBtn = document.getElementById('test-btn');
   const stopBtn = document.getElementById('stop-btn');
@@ -397,6 +403,7 @@
         speedVal.textContent = parseFloat(data.speed).toFixed(2) + 'x';
       }
       if (data.auto_read !== undefined) autoReadCheck.checked = data.auto_read;
+      if (data.active_session_only !== undefined) activeSessionOnlyCheck.checked = data.active_session_only;
       if (data.sample_phrase) testText.value = data.sample_phrase;
     } catch (e) {}
   }
@@ -408,6 +415,7 @@
       voice: voiceSelect.value,
       speed: parseFloat(speedSlider.value),
       auto_read: autoReadCheck.checked,
+      active_session_only: activeSessionOnlyCheck.checked,
       sample_phrase: testText.value
     };
     try {

@@ -21,19 +21,25 @@ const SCRIPT_PATH = path.join(__dirname, "speak.py");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const UI_PATH = path.join(__dirname, "ui", "index.html");
 
+const DEFAULT_CONFIG = {
+    voice: "af_sarah",
+    speed: 1.0,
+    lang: "en-us",
+    auto_read: true,
+    active_session_only: true,
+    sample_phrase: "Bro, this is a test of your local neural voice."
+};
+
 function loadConfig() {
     try {
         if (fs.existsSync(CONFIG_PATH)) {
-            return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+            return {
+                ...DEFAULT_CONFIG,
+                ...JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"))
+            };
         }
     } catch (e) {}
-    return {
-        voice: "af_sarah",
-        speed: 1.0,
-        lang: "en-us",
-        auto_read: true,
-        sample_phrase: "Bro, this is a test of your local neural voice."
-    };
+    return { ...DEFAULT_CONFIG };
 }
 
 function saveConfig(cfg) {
@@ -129,8 +135,20 @@ function cleanMarkdownForSpeech(md) {
 }
 
 let activeSpeechChild = null;
+let activeSessionMonitor = null;
+let activeSessionCheckInFlight = false;
+let foregroundCheckWarningLogged = false;
+
+function stopActiveSessionMonitor() {
+    if (activeSessionMonitor) {
+        clearInterval(activeSessionMonitor);
+        activeSessionMonitor = null;
+    }
+    activeSessionCheckInFlight = false;
+}
 
 function stopSpeech() {
+    stopActiveSessionMonitor();
     if (activeSpeechChild) {
         try {
             activeSpeechChild.kill("SIGTERM");
@@ -141,8 +159,47 @@ function stopSpeech() {
     return false;
 }
 
-async function speakText(text, voiceOverride = null, speedOverride = null, langOverride = null) {
-    if (!isReady) return;
+async function isCurrentSessionForeground() {
+    try {
+        // joinSession hides its client, but the session retains the shared RPC connection.
+        const response = await session.connection.sendRequest("session.getForeground", {});
+        return response?.sessionId === session.sessionId;
+    } catch (error) {
+        if (!foregroundCheckWarningLogged) {
+            foregroundCheckWarningLogged = true;
+            process.stderr.write(
+                `Broice could not determine the active Copilot session; speech was suppressed: ${error.message}\n`
+            );
+        }
+        return false;
+    }
+}
+
+function monitorActiveSession() {
+    stopActiveSessionMonitor();
+    activeSessionMonitor = setInterval(async () => {
+        if (!activeSpeechChild || activeSessionCheckInFlight) return;
+        activeSessionCheckInFlight = true;
+        try {
+            if (!await isCurrentSessionForeground()) {
+                stopSpeech();
+            }
+        } finally {
+            activeSessionCheckInFlight = false;
+        }
+    }, 750);
+    activeSessionMonitor.unref?.();
+}
+
+async function speakText(
+    text,
+    voiceOverride = null,
+    speedOverride = null,
+    langOverride = null,
+    activeSessionOnly = false
+) {
+    if (!isReady) return false;
+    if (activeSessionOnly && !await isCurrentSessionForeground()) return false;
     stopSpeech();
 
     const config = loadConfig();
@@ -151,7 +208,7 @@ async function speakText(text, voiceOverride = null, speedOverride = null, langO
     const lang = langOverride || config.lang || "en-us";
 
     const cleaned = cleanMarkdownForSpeech(text);
-    if (!cleaned) return;
+    if (!cleaned) return false;
 
     return new Promise((resolve) => {
         const child = execFile(PYTHON_PATH, [
@@ -164,10 +221,12 @@ async function speakText(text, voiceOverride = null, speedOverride = null, langO
         ], (err) => {
             if (activeSpeechChild === child) {
                 activeSpeechChild = null;
+                stopActiveSessionMonitor();
             }
-            resolve();
+            resolve(true);
         });
         activeSpeechChild = child;
+        if (activeSessionOnly) monitorActiveSession();
     });
 }
 
@@ -259,8 +318,17 @@ const session = await joinSession({
             },
             skipPermission: true,
             handler: async (args) => {
-                await speakText(args.text, args.voice, args.speed, args.lang);
-                return "Spoken successfully.";
+                const cfg = loadConfig();
+                const spoken = await speakText(
+                    args.text,
+                    args.voice,
+                    args.speed,
+                    args.lang,
+                    cfg.active_session_only
+                );
+                return spoken
+                    ? "Spoken successfully."
+                    : "Speech skipped because this is not the active session.";
             },
         },
         {
@@ -286,6 +354,7 @@ const session = await joinSession({
                     speed: { type: "number", description: "Playback speed (0.8 - 1.5, default: 1.0)" },
                     lang: { type: "string", description: "Language code ('en-us', 'en-gb')" },
                     auto_read: { type: "boolean", description: "Enable or disable automatic reading of assistant messages." },
+                    active_session_only: { type: "boolean", description: "Only speak when this session is currently shown in Copilot." },
                 },
             },
             skipPermission: true,
@@ -295,8 +364,9 @@ const session = await joinSession({
                 if (args.speed !== undefined) cfg.speed = args.speed;
                 if (args.lang !== undefined) cfg.lang = args.lang;
                 if (args.auto_read !== undefined) cfg.auto_read = args.auto_read;
+                if (args.active_session_only !== undefined) cfg.active_session_only = args.active_session_only;
                 saveConfig(cfg);
-                await session.log(`Voice updated: Voice=${cfg.voice}, Speed=${cfg.speed}, Auto-Read=${cfg.auto_read}`);
+                await session.log(`Voice updated: Voice=${cfg.voice}, Speed=${cfg.speed}, Auto-Read=${cfg.auto_read}, Active-Session-Only=${cfg.active_session_only}`);
                 return `Voice configuration updated:\n${JSON.stringify(cfg, null, 2)}`;
             },
         },
@@ -329,6 +399,6 @@ session.on("assistant.message", async (event) => {
     if (config.auto_read === false) return;
     const content = event?.data?.content;
     if (content) {
-        await speakText(content);
+        await speakText(content, null, null, null, config.active_session_only);
     }
 });

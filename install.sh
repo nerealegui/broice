@@ -8,7 +8,9 @@ mkdir -p "$DEST_DIR/ui"
 
 cp extension.mjs "$DEST_DIR/"
 cp speak.py "$DEST_DIR/"
-cp config.json "$DEST_DIR/"
+if [ ! -f "$DEST_DIR/config.json" ]; then
+    cp config.json "$DEST_DIR/"
+fi
 cp ui/index.html "$DEST_DIR/ui/"
 chmod +x "$DEST_DIR/speak.py"
 
