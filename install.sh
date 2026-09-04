@@ -7,6 +7,7 @@ echo "Installing Broice to $DEST_DIR..."
 mkdir -p "$DEST_DIR/ui"
 
 cp extension.mjs "$DEST_DIR/"
+cp speech-response-batcher.mjs "$DEST_DIR/"
 cp speak.py "$DEST_DIR/"
 if [ ! -f "$DEST_DIR/config.json" ]; then
     cp config.json "$DEST_DIR/"

@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
+import { createSpeechResponseBatcher } from "./speech-response-batcher.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,11 @@ const VOICES_PATH = path.join(BIN_DIR, "voices-v1.0.bin");
 const SCRIPT_PATH = path.join(__dirname, "speak.py");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const UI_PATH = path.join(__dirname, "ui", "index.html");
+const PYTHON_CANDIDATES = ["python3.13", "python3.12", "python3.11", "python3.10", "python3"];
+
+function getErrorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+}
 
 const DEFAULT_CONFIG = {
     voice: "af_sarah",
@@ -51,47 +57,92 @@ function saveConfig(cfg) {
 let isReady = false;
 let isBootstrapping = false;
 
+async function isSupportedPython(pythonPath) {
+    try {
+        const { stdout } = await execFileAsync(pythonPath, [
+            "-c",
+            "import sys; print(int((3, 10) <= sys.version_info[:2] < (3, 14)))"
+        ]);
+        return stdout.trim() === "1";
+    } catch {
+        return false;
+    }
+}
+
+async function findCompatiblePython() {
+    for (const candidate of PYTHON_CANDIDATES) {
+        if (await isSupportedPython(candidate)) return candidate;
+    }
+    throw new Error("Broice requires Python 3.10 through 3.13. Install a compatible Python and reload the extension.");
+}
+
+async function hasPythonDependencies() {
+    if (!fs.existsSync(PYTHON_PATH)) return false;
+
+    try {
+        await execFileAsync(PYTHON_PATH, [
+            "-c",
+            "import kokoro_onnx, soundfile, sounddevice"
+        ]);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 async function bootstrap(session) {
     if (isReady || isBootstrapping) return;
     isBootstrapping = true;
 
-    if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
+    try {
+        if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
 
-    const needsVenv = !fs.existsSync(PYTHON_PATH);
-    const needsModel = !fs.existsSync(MODEL_PATH) || !fs.existsSync(VOICES_PATH);
+        const needsVenv = !fs.existsSync(PYTHON_PATH) || !(await isSupportedPython(PYTHON_PATH));
+        const needsDependencies = needsVenv || !(await hasPythonDependencies());
+        const needsModel = !fs.existsSync(MODEL_PATH) || !fs.existsSync(VOICES_PATH);
 
-    if (needsVenv || needsModel) {
-        await session.log("Setting up Broice dependencies and neural weights locally...", { level: "info" });
-        
-        if (needsVenv) {
-            await session.log("Creating local Python virtual environment...", { ephemeral: true });
-            await execFileAsync("python3", ["-m", "venv", VENV_DIR]);
-            await execFileAsync(path.join(VENV_DIR, "bin", "pip"), [
-                "install", "--upgrade", "pip", "kokoro-onnx", "soundfile", "sounddevice"
-            ]);
+        if (needsDependencies || needsModel) {
+            await session.log("Setting up Broice dependencies and neural weights locally...", { level: "info" });
+
+            if (needsVenv) {
+                const python = await findCompatiblePython();
+                await session.log(`Creating local Python virtual environment with ${python}...`, { ephemeral: true });
+                fs.rmSync(VENV_DIR, { recursive: true, force: true });
+                await execFileAsync(python, ["-m", "venv", VENV_DIR]);
+            }
+
+            if (needsDependencies) {
+                await session.log("Installing Broice Python dependencies...", { ephemeral: true });
+                const pipPath = path.join(VENV_DIR, "bin", "pip");
+                await execFileAsync(pipPath, ["install", "--upgrade", "pip"]);
+                await execFileAsync(pipPath, [
+                    "install", "--upgrade", "kokoro-onnx", "soundfile", "sounddevice"
+                ]);
+            }
+
+            if (!fs.existsSync(MODEL_PATH)) {
+                await session.log("Downloading the Broice speech model (~310MB)...", { ephemeral: true });
+                await execFileAsync("curl", [
+                    "-L", "-o", MODEL_PATH,
+                    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
+                ]);
+            }
+
+            if (!fs.existsSync(VOICES_PATH)) {
+                await session.log("Downloading Broice voice data (~27MB)...", { ephemeral: true });
+                await execFileAsync("curl", [
+                    "-L", "-o", VOICES_PATH,
+                    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+                ]);
+            }
+
+            await session.log("Broice setup complete and ready!");
         }
 
-        if (!fs.existsSync(MODEL_PATH)) {
-            await session.log("Downloading the Broice speech model (~310MB)...", { ephemeral: true });
-            await execFileAsync("curl", [
-                "-L", "-o", MODEL_PATH,
-                "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
-            ]);
-        }
-
-        if (!fs.existsSync(VOICES_PATH)) {
-            await session.log("Downloading Broice voice data (~27MB)...", { ephemeral: true });
-            await execFileAsync("curl", [
-                "-L", "-o", VOICES_PATH,
-                "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
-            ]);
-        }
-
-        await session.log("Broice setup complete and ready!");
+        isReady = true;
+    } finally {
+        isBootstrapping = false;
     }
-
-    isReady = true;
-    isBootstrapping = false;
 }
 
 function cleanMarkdownForSpeech(md) {
@@ -135,6 +186,7 @@ function cleanMarkdownForSpeech(md) {
 }
 
 let activeSpeechChild = null;
+const expectedSpeechStops = new WeakSet();
 let activeSessionMonitor = null;
 let activeSessionCheckInFlight = false;
 let foregroundCheckWarningLogged = false;
@@ -151,6 +203,7 @@ function stopSpeech() {
     stopActiveSessionMonitor();
     if (activeSpeechChild) {
         try {
+            expectedSpeechStops.add(activeSpeechChild);
             activeSpeechChild.kill("SIGTERM");
         } catch (e) {}
         activeSpeechChild = null;
@@ -168,7 +221,7 @@ async function isCurrentSessionForeground() {
         if (!foregroundCheckWarningLogged) {
             foregroundCheckWarningLogged = true;
             process.stderr.write(
-                `Broice could not determine the active Copilot session; speech was suppressed: ${error.message}\n`
+                `Broice could not determine the active Copilot session; speech was suppressed: ${getErrorMessage(error)}\n`
             );
         }
         return false;
@@ -198,7 +251,9 @@ async function speakText(
     langOverride = null,
     activeSessionOnly = false
 ) {
-    if (!isReady) return false;
+    if (!isReady) {
+        throw new Error("Broice speech is not ready. Check the extension log for bootstrap errors.");
+    }
     if (activeSessionOnly && !await isCurrentSessionForeground()) return false;
     stopSpeech();
 
@@ -210,7 +265,7 @@ async function speakText(
     const cleaned = cleanMarkdownForSpeech(text);
     if (!cleaned) return false;
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const child = execFile(PYTHON_PATH, [
             SCRIPT_PATH,
             cleaned,
@@ -223,11 +278,32 @@ async function speakText(
                 activeSpeechChild = null;
                 stopActiveSessionMonitor();
             }
+            if (expectedSpeechStops.delete(child)) {
+                resolve(false);
+                return;
+            }
+            if (err) {
+                reject(err);
+                return;
+            }
             resolve(true);
         });
         activeSpeechChild = child;
         if (activeSessionOnly) monitorActiveSession();
     });
+}
+
+const finalResponseBatcher = createSpeechResponseBatcher({
+    speak: async (content) => {
+        const config = loadConfig();
+        return speakText(content, null, null, null, config.active_session_only);
+    },
+    shouldAutoRead: () => loadConfig().auto_read !== false,
+});
+
+function stopAutoReadAndPlayback() {
+    const discardedPending = finalResponseBatcher.suppressInteraction();
+    return stopSpeech() || discardedPending;
 }
 
 let serverPort = 49215;
@@ -260,7 +336,7 @@ const server = http.createServer((req, res) => {
             }
         });
     } else if (req.method === "POST" && req.url === "/api/stop-speech") {
-        const stopped = stopSpeech();
+        const stopped = stopAutoReadAndPlayback();
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true, stopped }));
     } else if (req.method === "POST" && req.url === "/api/test-speech") {
@@ -340,7 +416,7 @@ const session = await joinSession({
             },
             skipPermission: true,
             handler: async () => {
-                const stopped = stopSpeech();
+                const stopped = stopAutoReadAndPlayback();
                 return stopped ? "Speech playback stopped." : "No active speech was playing.";
             },
         },
@@ -377,8 +453,10 @@ const session = await joinSession({
         },
         onUserPromptSubmitted: async (input) => {
             stopSpeech();
+            finalResponseBatcher.beginInteraction();
             const text = input.prompt.trim().toLowerCase();
             if (text === "/stop" || text === "/quiet" || text === "/silence" || text === "/shh" || text === "/cancel") {
+                finalResponseBatcher.suppressInteraction();
                 return {
                     additionalContext: "The user commanded to stop voice playback. Confirm briefly that audio has been stopped."
                 };
@@ -392,13 +470,22 @@ const session = await joinSession({
     },
 });
 
-bootstrap(session).catch(() => {});
+void bootstrap(session).catch((error) => {
+    console.error(`Broice bootstrap failed: ${getErrorMessage(error)}`);
+});
 
 session.on("assistant.message", async (event) => {
-    const config = loadConfig();
-    if (config.auto_read === false) return;
-    const content = event?.data?.content;
-    if (content) {
-        await speakText(content, null, null, null, config.active_session_only);
+    finalResponseBatcher.queueAssistantMessage(event);
+});
+
+session.on("session.idle", async (event) => {
+    try {
+        await finalResponseBatcher.finishInteraction(event);
+    } catch (error) {
+        console.error(`Broice speech playback failed: ${getErrorMessage(error)}`);
     }
+});
+
+session.on("session.error", () => {
+    finalResponseBatcher.suppressInteraction();
 });
