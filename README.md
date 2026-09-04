@@ -86,9 +86,14 @@ cd kokoro-copilot-extension
   - Choose voices from a dropdown menu.
   - Adjust speed (0.7x – 1.5x).
   - Toggle automatic speech reading on/off.
-  - Play test phrases instantly.
+  - Play test phrases or click **"⏹️ Stop"** to immediately cancel speech.
 
-### 2. Conversational Controls (Hands-Free)
+### 2. Fast Commands & Mid-Speech Stop
+- **Stop Speech Mid-Sentence**: Type **`/stop`**, **`/quiet`**, **`/silence`**, or **`/shh`** to immediately halt voice playback.
+- Submitting any new user message automatically interrupts prior speech.
+- You can also ask Copilot: *"Stop speaking"*, *"Be quiet"*, or *"Stop voice"*.
+
+### 3. Conversational Controls (Hands-Free)
 You can also adjust settings by asking Copilot directly in chat:
 - *"Switch voice to bf_emma"*
 - *"Set speed to 1.1"*

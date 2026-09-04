@@ -112,6 +112,14 @@
   .btn-test:hover {
     background: #30363d;
   }
+  .btn-stop {
+    background: #3e1f1f;
+    color: #ff7b72;
+    border-color: #f8514966;
+  }
+  .btn-stop:hover {
+    background: #5a2727;
+  }
   .status {
     margin-top: 16px;
     font-size: 13px;
@@ -167,8 +175,9 @@
   </div>
 
   <div class="actions">
-    <button class="btn-test" id="test-btn">▶️ Test Voice</button>
-    <button class="btn-save" id="save-btn">Save Settings</button>
+    <button class="btn-test" id="test-btn">▶️ Test</button>
+    <button class="btn-stop" id="stop-btn">⏹️ Stop</button>
+    <button class="btn-save" id="save-btn">Save</button>
   </div>
 
   <div class="status" id="status-msg"></div>
@@ -181,6 +190,7 @@
   const autoReadCheck = document.getElementById('auto_read');
   const testText = document.getElementById('test-text');
   const testBtn = document.getElementById('test-btn');
+  const stopBtn = document.getElementById('stop-btn');
   const saveBtn = document.getElementById('save-btn');
   const statusMsg = document.getElementById('status-msg');
 
@@ -237,6 +247,16 @@
       setTimeout(() => statusMsg.textContent = '', 3000);
     } catch (err) {
       statusMsg.textContent = 'Error playing audio';
+    }
+  });
+
+  stopBtn.addEventListener('click', async () => {
+    try {
+      await fetch('/api/stop-speech', { method: 'POST' });
+      statusMsg.textContent = '⏹️ Speech stopped';
+      setTimeout(() => statusMsg.textContent = '', 3000);
+    } catch (err) {
+      statusMsg.textContent = 'Error stopping speech';
     }
   });
 

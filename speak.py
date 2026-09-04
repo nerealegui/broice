@@ -3,8 +3,27 @@ import sys
 import os
 import argparse
 import subprocess
+import signal
 import soundfile as sf
 from kokoro_onnx import Kokoro
+
+afplay_proc = None
+
+def signal_handler(signum, frame):
+    global afplay_proc
+    if afplay_proc and afplay_proc.poll() is None:
+        try:
+            afplay_proc.terminate()
+            afplay_proc.wait(timeout=0.2)
+        except Exception:
+            try:
+                afplay_proc.kill()
+            except Exception:
+                pass
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
 
 def main():
     parser = argparse.ArgumentParser(description="Local Kokoro Text-to-Speech")
@@ -37,7 +56,10 @@ def main():
         lang=args.lang
     )
     sf.write(output_wav, samples, sample_rate)
-    subprocess.run(["afplay", output_wav])
+    
+    global afplay_proc
+    afplay_proc = subprocess.Popen(["afplay", output_wav])
+    afplay_proc.wait()
 
 if __name__ == "__main__":
     main()

@@ -122,8 +122,23 @@ function cleanMarkdownForSpeech(md) {
         .trim();
 }
 
+let activeSpeechChild = null;
+
+function stopSpeech() {
+    if (activeSpeechChild) {
+        try {
+            activeSpeechChild.kill("SIGTERM");
+        } catch (e) {}
+        activeSpeechChild = null;
+        return true;
+    }
+    return false;
+}
+
 async function speakText(text, voiceOverride = null, speedOverride = null, langOverride = null) {
     if (!isReady) return;
+    stopSpeech();
+
     const config = loadConfig();
     const voice = voiceOverride || config.voice || "af_sarah";
     const speed = speedOverride !== null && speedOverride !== undefined ? speedOverride : (config.speed || 1.0);
@@ -132,16 +147,22 @@ async function speakText(text, voiceOverride = null, speedOverride = null, langO
     const cleaned = cleanMarkdownForSpeech(text);
     if (!cleaned) return;
 
-    try {
-        await execFileAsync(PYTHON_PATH, [
+    return new Promise((resolve) => {
+        const child = execFile(PYTHON_PATH, [
             SCRIPT_PATH,
             cleaned,
             "--voice", voice,
             "--speed", speed.toString(),
             "--lang", lang,
             "--model-dir", BIN_DIR
-        ]);
-    } catch (err) {}
+        ], (err) => {
+            if (activeSpeechChild === child) {
+                activeSpeechChild = null;
+            }
+            resolve();
+        });
+        activeSpeechChild = child;
+    });
 }
 
 let serverPort = 49215;
@@ -173,6 +194,10 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ error: e.message }));
             }
         });
+    } else if (req.method === "POST" && req.url === "/api/stop-speech") {
+        const stopped = stopSpeech();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true, stopped }));
     } else if (req.method === "POST" && req.url === "/api/test-speech") {
         let body = "";
         req.on("data", chunk => body += chunk);
@@ -233,6 +258,19 @@ const session = await joinSession({
             },
         },
         {
+            name: "stop_speaking",
+            description: "Immediately stop any currently active speech synthesis or audio playback.",
+            parameters: {
+                type: "object",
+                properties: {},
+            },
+            skipPermission: true,
+            handler: async () => {
+                const stopped = stopSpeech();
+                return stopped ? "Speech playback stopped." : "No active speech was playing.";
+            },
+        },
+        {
             name: "configure_voice",
             description: "Set voice settings for Kokoro TTS (voice selection, speed, language, or toggle auto-reading).",
             parameters: {
@@ -262,7 +300,13 @@ const session = await joinSession({
             await bootstrap(session);
         },
         onUserPromptSubmitted: async (input) => {
+            stopSpeech();
             const text = input.prompt.trim().toLowerCase();
+            if (text === "/stop" || text === "/quiet" || text === "/silence" || text === "/shh" || text === "/cancel") {
+                return {
+                    additionalContext: "The user commanded to stop voice playback. Confirm briefly that audio has been stopped."
+                };
+            }
             if (text === "/voice" || text === "/tts" || text === "/voices" || text === "voice settings" || text === "voice canvas") {
                 return {
                     additionalContext: "The user triggered the voice settings shortcut. Immediately invoke open_canvas with canvasId: 'kokoro-voice-settings', instanceId: 'kokoro-settings-panel' and confirm to the user."
