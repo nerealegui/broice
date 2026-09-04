@@ -85,10 +85,26 @@ async function bootstrap(session) {
 function cleanMarkdownForSpeech(md) {
     if (!md) return "";
     return md
+        // 1. Remove code blocks
         .replace(/```[\s\S]*?```/g, " [code snippet] ")
-        .replace(/`([^`]+)`/g, "$1")
+        // 2. Transform inline code `code` (expand dots, slashes, underscores, colons for clear speech)
+        .replace(/`([^`]+)`/g, (match, code) => {
+            let processed = code
+                .replace(/\./g, " dot ")
+                .replace(/\//g, " slash ")
+                .replace(/\\/g, " slash ")
+                .replace(/_/g, " ")
+                .replace(/@/g, " at ")
+                .replace(/:/g, " colon ")
+                .replace(/~/g, "tilde")
+                .replace(/\s+/g, " ")
+                .trim();
+            return ` ${processed} `;
+        })
+        // 3. Remove images and keep link text
         .replace(/!\[.*?\]\(.*?\)/g, "")
         .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+        // 4. Remove headings, blockquotes, table borders, bold/italic markers
         .replace(/^#{1,6}\s+/gm, "")
         .replace(/^\s*>\s+/gm, "")
         .replace(/\|/g, " ")
@@ -96,7 +112,13 @@ function cleanMarkdownForSpeech(md) {
         .replace(/(\*\*|\*|__|_)(.*?)\1/g, "$2")
         .replace(/^[\s]*[-*+]\s+/gm, "")
         .replace(/^[\s]*\d+\.\s+/gm, "")
-        .replace(/\n{2,}/g, "\n")
+        // 5. Remove all emojis and variation selectors
+        .replace(/[\uFE0E\uFE0F]/g, "")
+        .replace(/\p{Extended_Pictographic}|\p{Emoji_Presentation}/gu, "")
+        // 6. Clean up spacing and punctuation glitches
+        .replace(/[ \t]+/g, " ")
+        .replace(/\s+([.,!?;:])/g, "$1")
+        .replace(/\n\s*\n/g, "\n")
         .trim();
 }
 
