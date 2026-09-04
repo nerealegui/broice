@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
-DEST_DIR="$HOME/.copilot/extensions/kokoro-tts"
-echo "🚀 Installing Kokoro TTS Extension to $DEST_DIR..."
+DEST_DIR="$HOME/.copilot/extensions/broice"
+echo "Installing Broice to $DEST_DIR..."
 
 mkdir -p "$DEST_DIR/ui"
 

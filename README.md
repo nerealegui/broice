@@ -1,136 +1,246 @@
-# 🎙️ Kokoro TTS for GitHub Copilot CLI
+# Broice
 
-A **100% local, high-quality neural Text-to-Speech (TTS) extension** with an **interactive side-panel Canvas UI** for GitHub Copilot on macOS.
+**Broice** gives GitHub Copilot a voice — 100% locally, on your own Mac.
 
----
+It reads Copilot's responses out loud using a local neural text-to-speech model, with an interactive settings panel built right into the Copilot side panel. No API keys, no cloud calls, no telemetry. Audio never leaves your machine.
 
-## 🌟 Key Features
+Broice runs the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) ONNX model (~82M parameters) under the hood.
 
-- **Zero Cloud / 100% Private**: Neural model (~82M params) runs entirely on your Mac's CPU/Neural Engine using ONNX.
-- **Interactive Side-Panel Canvas**: Visual settings dashboard (voice selection, speed slider, test player) built with the Copilot SDK.
-- **Automatic Background Reader**: Reads assistant replies out loud automatically with smart Markdown cleaning (stripping code snippets, hashes, and links).
-- **Fast Commands & Triggers**: Type `/voice` or `/tts` anywhere in Copilot to pop open the settings canvas.
-- **Self-Bootstrapping**: Automatic background download and setup of Python venv and neural weights on first launch.
+<p align="center">
+  <img src="docs/settings-panel.png" alt="Broice voice settings panel inside GitHub Copilot" width="480">
+</p>
 
 ---
 
-## 🗺️ Architecture & Workflow
+## Features
+
+| Feature | Description |
+|---|---|
+| **Fully local** | Neural inference runs on your Mac's CPU / Neural Engine via ONNX Runtime. Nothing is sent anywhere. |
+| **Auto-read responses** | Speaks Copilot replies as they arrive, with Markdown cleaned for natural speech. |
+| **Settings Canvas** | A native-feeling side panel (GitHub Primer styled) to pick a voice, tune speed, and test audio. |
+| **Mid-speech stop** | Cancel playback instantly via button, slash command, or natural language. |
+| **Smart speech rules** | Skips emojis, and reads `install.sh` as "install dot sh" instead of two separate words. |
+| **Self-bootstrapping** | On first run it creates its own Python venv and downloads model weights automatically. |
+| **10 voices** | American and British, male and female. |
+
+---
+
+## How it works
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                               USER'S MAC (LOCAL ONLY)                            │
-│                                                                                  │
-│  1. GITHUB COPILOT APP                                                           │
-│     ┌────────────────────────────────────────────────────────┐                   │
-│     │  GitHub Copilot App / CLI Runtime                      │                   │
-│     │  • User submits prompt / receives reply                │                   │
-│     │  • Emits session event: "assistant.message"            │                   │
-│     │  • Type `/voice` to open side-panel Canvas             │                   │
-│     └──────────────────────────┬─────────────────────────────┘                   │
-│                                │ JSON-RPC (stdio)                                │
-│                                ▼                                                 │
-│  2. EXTENSION LAYER (`~/.copilot/extensions/kokoro-tts/`)                       │
-│     ┌────────────────────────────────────────────────────────┐                   │
-│     │  extension.mjs                                         │                   │
-│     │  • Auto-bootstraps weights/venv on first launch        │                   │
-│     │  • Listens to "assistant.message"                      │                   │
-│     │  • Hosts local HTTP server for Side-Panel Canvas UI    │                   │
-│     │  • Exposes `configure_voice` & `speak` tools           │                   │
-│     └──────────────────────────┬─────────────────────────────┘                   │
-│                                │ Spawns Python CLI worker                        │
-│                                ▼                                                 │
-│  3. LOCAL KOKORO ENGINE (`bin/` or `~/.kokoro-tts/`)                             │
-│     ┌────────────────────────────────────────────────────────┐                   │
-│     │  speak.py + ONNX Runtime (kokoro-onnx)                 │                   │
-│     │  • kokoro-v1.0.onnx (Neural weights, ~310MB)           │                   │
-│     │  • voices-v1.0.bin  (Voice embeddings, ~27MB)          │                   │
-│     │  • Generates latest_speech.wav                         │                   │
-│     └──────────────────────────┬─────────────────────────────┘                   │
-│                                │ Audio Stream                                    │
-│                                ▼                                                 │
-│  4. AUDIO PLAYBACK                                                               │
-│     ┌────────────────────────────────────────────────────────┐                   │
-│     │  macOS native `afplay` ──► Mac Speakers / Headphones   │                   │
-│     └────────────────────────────────────────────────────────┘                   │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────┐
+│                          YOUR MAC — EVERYTHING IS LOCAL                        │
+│                                                                                │
+│  1. GITHUB COPILOT                                                             │
+│     ┌──────────────────────────────────────────────────────────┐               │
+│     │  Copilot App / CLI runtime                               │               │
+│     │  • You send a prompt, Copilot replies                    │               │
+│     │  • Emits session event: "assistant.message"              │               │
+│     │  • `/voice` opens the settings Canvas                    │               │
+│     └───────────────────────────┬──────────────────────────────┘               │
+│                                 │ JSON-RPC over stdio                          │
+│                                 ▼                                              │
+│  2. BROICE EXTENSION  (~/.copilot/extensions/broice/)                          │
+│     ┌──────────────────────────────────────────────────────────┐               │
+│     │  extension.mjs                                           │               │
+│     │  • Bootstraps venv + model weights on first launch       │               │
+│     │  • Listens for "assistant.message" → speaks the reply    │               │
+│     │  • Cleans Markdown, strips emojis, expands code names    │               │
+│     │  • Serves the Canvas UI over a local HTTP server         │               │
+│     │  • Tools: speak / stop_speaking / configure_voice        │               │
+│     └───────────────────────────┬──────────────────────────────┘               │
+│                                 │ spawns Python worker                         │
+│                                 ▼                                              │
+│  3. SPEECH ENGINE  (bin/)                                                      │
+│     ┌──────────────────────────────────────────────────────────┐               │
+│     │  speak.py  +  ONNX Runtime (kokoro-onnx)                 │               │
+│     │  • kokoro-v1.0.onnx   neural weights   ~310 MB           │               │
+│     │  • voices-v1.0.bin    voice embeddings  ~27 MB           │               │
+│     │  • renders latest_speech.wav                             │               │
+│     │  • SIGTERM handler → instant cancellation                │               │
+│     └───────────────────────────┬──────────────────────────────┘               │
+│                                 │ audio                                        │
+│                                 ▼                                              │
+│  4. PLAYBACK                                                                   │
+│     ┌──────────────────────────────────────────────────────────┐               │
+│     │  macOS `afplay`  ──►  speakers / headphones              │               │
+│     └──────────────────────────────────────────────────────────┘               │
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Speech flow
+
+```
+Copilot reply
+     │
+     ▼
+cleanMarkdownForSpeech()
+     │  • code blocks  →  "[code snippet]"
+     │  • `install.sh` →  "install dot sh"
+     │  • emojis       →  removed
+     │  • headings, links, tables, bullets → flattened
+     ▼
+speak.py  ──►  Kokoro ONNX  ──►  WAV  ──►  afplay  ──►  audio out
+     ▲
+     └── SIGTERM from stopSpeech() cancels playback immediately
+```
+
+### Canvas flow
+
+```
+You type /voice
+     │
+     ▼
+onUserPromptSubmitted hook  ──►  open_canvas("broice-voice-settings")
+     │
+     ▼
+Copilot side panel loads  http://127.0.0.1:<port>
+     │                          │
+     │                          ├─ GET  /api/config       read settings
+     │                          ├─ POST /api/config       save to config.json
+     │                          ├─ POST /api/test-speech  preview a voice
+     │                          └─ POST /api/stop-speech  cancel playback
+     ▼
+ui/index.html  (GitHub Primer styled, light mode)
 ```
 
 ---
 
-## 📦 Installation Options
+## Requirements
 
-### Option 1: Automatic Installer (Recommended)
-Run the `install.sh` script from this repo:
+- macOS (uses the built-in `afplay` for audio)
+- GitHub Copilot App or Copilot CLI
+- Python 3 available as `python3`
+- ~400 MB free disk space for the model weights
+
+---
+
+## Setup
+
+### Option 1 — Installer script (recommended)
+
 ```bash
-git clone <repo-url>
-cd kokoro-copilot-extension
+git clone <repo-url> broice
+cd broice
 ./install.sh
 ```
 
-### Option 2: Manual Install (Drop Folder)
-1. Copy this folder into your Copilot extensions directory:
-   ```bash
-   cp -r . ~/.copilot/extensions/kokoro-tts
-   ```
-2. Restart Copilot or reload extensions.
+The script copies the extension into `~/.copilot/extensions/broice/`.
 
-> **Note on First Run:** The extension will automatically create its local virtualenv and download the ONNX weights in the background.
+### Option 2 — Manual install
 
----
-
-## 🎮 How to Use & Trigger
-
-### 1. Side-Panel Canvas UI
-- Type **`/voice`**, **`/tts`**, or ask *"Open voice settings"* in chat.
-- The interactive settings panel will open in the side tab where you can:
-  - Choose voices from a dropdown menu.
-  - Adjust speed (0.7x – 1.5x).
-  - Toggle automatic speech reading on/off.
-  - Play test phrases or click **"⏹️ Stop"** to immediately cancel speech.
-
-### 2. Fast Commands & Mid-Speech Stop
-- **Stop Speech Mid-Sentence**: Type **`/stop`**, **`/quiet`**, **`/silence`**, or **`/shh`** to immediately halt voice playback.
-- Submitting any new user message automatically interrupts prior speech.
-- You can also ask Copilot: *"Stop speaking"*, *"Be quiet"*, or *"Stop voice"*.
-
-### 3. Conversational Controls (Hands-Free)
-You can also adjust settings by asking Copilot directly in chat:
-- *"Switch voice to bf_emma"*
-- *"Set speed to 1.1"*
-- *"Turn off voice"*
-
----
-
-## 🎨 How to Modify the Canvas UI
-
-The canvas frontend is completely isolated in:
-```
-ui/index.html
+```bash
+mkdir -p ~/.copilot/extensions/broice
+cp -r extension.mjs speak.py config.json ui ~/.copilot/extensions/broice/
 ```
 
-### To Customize:
-1. Open `ui/index.html` in your editor.
-2. Modify the HTML, CSS styles, or JavaScript controls.
-3. Refresh the side-panel canvas in Copilot to see changes live!
+### Then
 
-### Endpoints exposed by `extension.mjs`:
-- `GET /api/config`: Returns current `{ voice, speed, lang, auto_read }`.
-- `POST /api/config`: Updates settings in `config.json`.
-- `POST /api/test-speech`: Synthesizes and plays a test audio sample.
+1. Reload extensions — in Copilot CLI run `/reload`, or restart the Copilot App.
+2. Confirm it loaded. You should see `broice — ready [user]`.
+3. On first launch Broice creates its virtualenv and downloads the model weights in the background. This takes a couple of minutes and only happens once.
+4. Type `/voice` in chat to open the settings panel.
+
+> **First-run note:** Speech won't work until the bootstrap finishes. Watch for the "Broice setup complete and ready!" log message.
 
 ---
 
-## 🗣️ Available Voices
+## Usage
 
-| Voice ID | Accent / Gender | Tone |
+### Open the settings panel
+
+Type any of these in Copilot chat:
+
+```
+/voice     /tts     /voices     voice settings
+```
+
+From the panel you can pick a voice, adjust speed from 0.7x to 1.5x, toggle automatic reading, edit and save your sample phrase, preview with **Test**, and cancel with **Stop**.
+
+### Stop speech mid-sentence
+
+| Method | How |
+|---|---|
+| Slash command | `/stop` · `/quiet` · `/silence` · `/shh` · `/cancel` |
+| Panel | Click **Stop** |
+| Natural language | "Stop speaking", "Be quiet" |
+| Automatic | Sending any new message interrupts the previous speech |
+
+### Control it conversationally
+
+```
+"Switch voice to bf_emma"
+"Set speed to 1.1"
+"Turn off auto-reading"
+"Read that back to me"
+```
+
+---
+
+## Voices
+
+| Voice ID | Accent | Character |
 |---|---|---|
-| `af_sarah` | American Female | Warm, Natural (Default) |
-| `af_bella` | American Female | Soft, Clear |
-| `af_nicole` | American Female | Crisp, Professional |
+| `af_sarah` | American Female | Warm, natural (default) |
+| `af_bella` | American Female | Soft, clear |
+| `af_nicole` | American Female | Crisp, professional |
 | `af_sky` | American Female | Dynamic |
-| `am_adam` | American Male | Deep, Articulate |
-| `am_michael` | American Male | Friendly, Standard |
+| `am_adam` | American Male | Deep, articulate |
+| `am_michael` | American Male | Friendly, standard |
 | `bf_emma` | British Female | Conversational |
-| `bf_isabella` | British Female | Formal, Articulate |
+| `bf_isabella` | British Female | Formal, articulate |
 | `bm_george` | British Male | Classic British |
 | `bm_lewis` | British Male | Casual British |
+
+---
+
+## Repository layout
+
+```
+broice/
+├── extension.mjs        Copilot extension: tools, canvas, hooks, HTTP server
+├── speak.py             Python worker: ONNX inference + afplay playback
+├── ui/index.html        Settings panel frontend (HTML/CSS/JS, Primer styled)
+├── config.json          Persisted settings
+├── install.sh           Installer
+├── docs/                Screenshots
+└── bin/                 Created at runtime — venv + model weights (gitignored)
+```
+
+---
+
+## Customizing the panel
+
+The entire frontend lives in a single self-contained file: `ui/index.html`. Edit it, then reopen the canvas in Copilot to see your changes — no build step, no rebuild, no restart of the model.
+
+**HTTP API available to the frontend:**
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/config` | `GET` | Read `{ voice, speed, lang, auto_read, sample_phrase }` |
+| `/api/config` | `POST` | Persist settings to `config.json` |
+| `/api/test-speech` | `POST` | Synthesize and play `{ text, voice, speed }` |
+| `/api/stop-speech` | `POST` | Cancel active playback |
+
+---
+
+## Tools exposed to Copilot
+
+| Tool | Purpose |
+|---|---|
+| `speak` | Speak arbitrary text with optional voice, speed, and language overrides |
+| `stop_speaking` | Immediately cancel any active playback |
+| `configure_voice` | Update voice, speed, language, or auto-read setting |
+
+---
+
+## Privacy
+
+Broice makes exactly two network requests, both on first install, both to GitHub Releases, to download the model weights. After that it is fully offline. Your prompts, Copilot's responses, and all generated audio stay on your machine.
+
+---
+
+## Credits
+
+Speech synthesis powered by [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx) and the [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) model.

@@ -2,5 +2,6 @@
   "voice": "af_sarah",
   "speed": 1.0,
   "lang": "en-us",
-  "auto_read": true
+  "auto_read": true,
+  "sample_phrase": "Bro, this is a test of your local neural voice."
 }

@@ -1,5 +1,5 @@
-// Extension: kokoro-tts
-// Local Kokoro neural TTS extension for GitHub Copilot CLI
+// Extension: broice
+// Local neural TTS extension for GitHub Copilot CLI, powered by Kokoro
 
 import { joinSession, createCanvas } from "@github/copilot-sdk/extension";
 import { execFile } from "node:child_process";
@@ -27,7 +27,13 @@ function loadConfig() {
             return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
         }
     } catch (e) {}
-    return { voice: "af_sarah", speed: 1.0, lang: "en-us", auto_read: true };
+    return {
+        voice: "af_sarah",
+        speed: 1.0,
+        lang: "en-us",
+        auto_read: true,
+        sample_phrase: "Bro, this is a test of your local neural voice."
+    };
 }
 
 function saveConfig(cfg) {
@@ -49,7 +55,7 @@ async function bootstrap(session) {
     const needsModel = !fs.existsSync(MODEL_PATH) || !fs.existsSync(VOICES_PATH);
 
     if (needsVenv || needsModel) {
-        await session.log("Setting up Kokoro TTS dependencies & neural weights locally...", { level: "info" });
+        await session.log("Setting up Broice dependencies and neural weights locally...", { level: "info" });
         
         if (needsVenv) {
             await session.log("Creating local Python virtual environment...", { ephemeral: true });
@@ -60,7 +66,7 @@ async function bootstrap(session) {
         }
 
         if (!fs.existsSync(MODEL_PATH)) {
-            await session.log("Downloading Kokoro v1.0 ONNX neural model (~310MB)...", { ephemeral: true });
+            await session.log("Downloading the Broice speech model (~310MB)...", { ephemeral: true });
             await execFileAsync("curl", [
                 "-L", "-o", MODEL_PATH,
                 "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx"
@@ -68,14 +74,14 @@ async function bootstrap(session) {
         }
 
         if (!fs.existsSync(VOICES_PATH)) {
-            await session.log("Downloading Kokoro voice embeddings (~27MB)...", { ephemeral: true });
+            await session.log("Downloading Broice voice data (~27MB)...", { ephemeral: true });
             await execFileAsync("curl", [
                 "-L", "-o", VOICES_PATH,
                 "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
             ]);
         }
 
-        await session.log("Kokoro TTS setup complete and ready!");
+        await session.log("Broice setup complete and ready!");
     }
 
     isReady = true;
@@ -173,7 +179,7 @@ const server = http.createServer((req, res) => {
         if (fs.existsSync(UI_PATH)) {
             res.end(fs.readFileSync(UI_PATH, "utf8"));
         } else {
-            res.end("<h1>Kokoro Settings UI not found</h1>");
+            res.end("<h1>Broice settings UI not found</h1>");
         }
     } else if (req.method === "GET" && req.url === "/api/config") {
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -223,13 +229,13 @@ server.listen(0, "127.0.0.1", () => {
 });
 
 const voiceSettingsCanvas = createCanvas({
-    id: "kokoro-voice-settings",
+    id: "broice-voice-settings",
     displayName: "Voice Settings",
-    description: "Visual panel to configure Kokoro TTS voices, speed, and auto-reading preferences.",
+    description: "Visual panel to configure Broice voices, speed, and auto-reading preferences.",
     open: (ctx) => {
         return {
             url: `http://127.0.0.1:${serverPort}`,
-            title: "🎙️ Kokoro Voice Settings",
+            title: "Broice Voice Settings",
             status: "ready"
         };
     }
@@ -240,7 +246,7 @@ const session = await joinSession({
     tools: [
         {
             name: "speak",
-            description: "Speak text out loud using the local Kokoro neural TTS model on your Mac.",
+            description: "Speak text out loud using Broice's local neural voice model on your Mac.",
             parameters: {
                 type: "object",
                 properties: {
@@ -272,7 +278,7 @@ const session = await joinSession({
         },
         {
             name: "configure_voice",
-            description: "Set voice settings for Kokoro TTS (voice selection, speed, language, or toggle auto-reading).",
+            description: "Set Broice voice settings (voice selection, speed, language, or toggle auto-reading).",
             parameters: {
                 type: "object",
                 properties: {
@@ -309,7 +315,7 @@ const session = await joinSession({
             }
             if (text === "/voice" || text === "/tts" || text === "/voices" || text === "voice settings" || text === "voice canvas") {
                 return {
-                    additionalContext: "The user triggered the voice settings shortcut. Immediately invoke open_canvas with canvasId: 'kokoro-voice-settings', instanceId: 'kokoro-settings-panel' and confirm to the user."
+                    additionalContext: "The user triggered the voice settings shortcut. Immediately invoke open_canvas with canvasId: 'broice-voice-settings', instanceId: 'broice-settings-panel' and confirm to the user."
                 };
             }
         },

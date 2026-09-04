@@ -3,138 +3,314 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kokoro TTS Voice Settings</title>
+<title>Broice Voice Settings</title>
 <style>
   :root {
-    --bg: #0d1117;
-    --card: #161b22;
-    --border: #30363d;
-    --text: #c9d1d9;
-    --text-heading: #f0f6fc;
-    --primary: #238636;
-    --primary-hover: #2ea043;
-    --btn-secondary: #21262d;
-    --accent: #58a6ff;
+    --color-canvas-default: #ffffff;
+    --color-canvas-subtle: #f6f8fa;
+    --color-border-default: #d0d7de;
+    --color-border-muted: #d8dee4;
+    --color-fg-default: #1f2328;
+    --color-fg-muted: #656d76;
+    --color-fg-subtle: #6e7781;
+    --color-accent-fg: #0969da;
+    --color-accent-emphasis: #0969da;
+    --color-success-fg: #1a7f37;
+    --color-success-emphasis: #1f883d;
+    --color-success-hover: #1a7f37;
+    --color-danger-fg: #cf222e;
+    --color-danger-emphasis: #a40e26;
+    --color-btn-bg: #f6f8fa;
+    --color-btn-border: #d0d7de;
+    --color-btn-hover-bg: #f3f4f6;
+    --color-btn-hover-border: #1f232826;
+    --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    margin: 0;
-    padding: 24px;
+
+  * {
     box-sizing: border-box;
   }
-  .container {
-    max-width: 520px;
-    margin: 0 auto;
-    background: var(--card);
-    padding: 24px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
+
+  body {
+    font-family: var(--font-stack);
+    background-color: var(--color-canvas-default);
+    color: var(--color-fg-default);
+    margin: 0;
+    padding: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
-  h2 {
-    margin-top: 0;
-    color: var(--text-heading);
-    font-size: 20px;
+
+  .container {
+    max-width: 480px;
+    margin: 0 auto;
+    background-color: var(--color-canvas-subtle);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border-default);
+  }
+
+  .header {
     display: flex;
     align-items: center;
-    gap: 8px;
-  }
-  .form-group {
+    gap: 12px;
     margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--color-border-muted);
   }
+
+  .header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-fg-default);
+    background: transparent;
+  }
+
+  .header .octicon {
+    color: var(--color-fg-muted);
+    display: block;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
   label {
     display: block;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     font-size: 13px;
     font-weight: 600;
-    color: var(--text-heading);
+    color: var(--color-fg-default);
   }
-  select, input[type="text"], input[type="range"] {
+
+  .label-with-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .meta-value {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+    font-family: var(--font-mono);
+  }
+
+  select, input[type="text"] {
     width: 100%;
-    padding: 8px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--text-heading);
+    padding: 5px 12px;
     font-size: 14px;
-    box-sizing: border-box;
+    line-height: 20px;
+    font-family: var(--font-stack);
+    color: var(--color-fg-default);
+    background-color: var(--color-canvas-default);
+    border: 1px solid var(--color-border-default);
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 80ms cubic-bezier(0.33, 1, 0.68, 1), box-shadow 80ms cubic-bezier(0.33, 1, 0.68, 1);
   }
+
+  select:focus, input[type="text"]:focus {
+    border-color: var(--color-accent-emphasis);
+    box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.4);
+  }
+
+  /* Primer-styled Range Slider */
   .range-container {
     display: flex;
     align-items: center;
-    gap: 12px;
+    padding: 4px 0;
   }
-  .range-value {
-    font-size: 14px;
-    font-weight: bold;
-    color: var(--accent);
-    min-width: 35px;
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--color-border-default);
+    outline: none;
+    margin: 8px 0;
   }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--color-accent-fg);
+    cursor: pointer;
+    border: 2px solid var(--color-canvas-default);
+    box-shadow: 0 1px 3px rgba(31, 35, 40, 0.2);
+    transition: transform 0.1s ease;
+  }
+
+  input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+
+  input[type="range"]:focus-visible {
+    outline: 2px solid var(--color-accent-emphasis);
+    outline-offset: 4px;
+  }
+
+  /* Primer Checkbox */
   .checkbox-group {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 20px;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 4px 0;
   }
-  .checkbox-group input {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--primary);
+
+  .checkbox-group input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 2px 0 0 0;
+    cursor: pointer;
+    accent-color: var(--color-accent-emphasis);
+    border-radius: 4px;
   }
+
+  .checkbox-group label {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--color-fg-default);
+    cursor: pointer;
+    margin-bottom: 0;
+    user-select: none;
+  }
+
+  /* Primer Button System */
   .actions {
     display: flex;
-    gap: 12px;
-    margin-top: 24px;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border-muted);
   }
-  button {
-    flex: 1;
-    padding: 10px;
-    border-radius: 6px;
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 5px 16px;
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 500;
+    line-height: 20px;
+    border-radius: 6px;
     cursor: pointer;
-    border: 1px solid transparent;
-    transition: background 0.15s ease-in-out;
+    border: 1px solid var(--color-btn-border);
+    background-color: var(--color-btn-bg);
+    color: var(--color-fg-default);
+    font-family: var(--font-stack);
+    text-decoration: none;
+    user-select: none;
+    transition: 80ms cubic-bezier(0.33, 1, 0.68, 1);
+    box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
   }
-  .btn-save {
-    background: var(--primary);
-    color: #fff;
+
+  .btn .octicon {
+    fill: currentColor;
+    flex-shrink: 0;
   }
-  .btn-save:hover {
-    background: var(--primary-hover);
+
+  .btn:hover {
+    background-color: var(--color-btn-hover-bg);
+    border-color: var(--color-btn-hover-border);
   }
-  .btn-test {
-    background: var(--btn-secondary);
-    color: var(--text-heading);
-    border-color: var(--border);
+
+  .btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.4);
   }
-  .btn-test:hover {
-    background: #30363d;
+
+  .btn:active {
+    background-color: #ebecf0;
   }
-  .btn-stop {
-    background: #3e1f1f;
-    color: #ff7b72;
-    border-color: #f8514966;
+
+  .btn-primary {
+    background-color: var(--color-success-emphasis);
+    border-color: rgba(31, 35, 40, 0.15);
+    color: #ffffff;
+    flex: 1;
   }
-  .btn-stop:hover {
-    background: #5a2727;
+
+  .btn-primary:hover {
+    background-color: var(--color-success-hover);
+    border-color: rgba(31, 35, 40, 0.15);
   }
+
+  .btn-primary:focus-visible {
+    box-shadow: 0 0 0 3px rgba(46, 160, 67, 0.4);
+  }
+
+  .btn-primary:active {
+    background-color: #187733;
+  }
+
+  .btn-secondary {
+    flex: 1;
+  }
+
+  .btn-danger {
+    color: var(--color-danger-fg);
+    flex: 1;
+  }
+
+  .btn-danger:hover {
+    background-color: var(--color-danger-emphasis);
+    border-color: var(--color-danger-fg);
+    color: #ffffff;
+  }
+
+  .btn-danger:hover .octicon {
+    fill: #ffffff;
+  }
+
+  .btn-danger:focus-visible {
+    box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.4);
+  }
+
   .status {
-    margin-top: 16px;
-    font-size: 13px;
+    margin-top: 12px;
+    font-size: 12px;
     text-align: center;
-    color: var(--accent);
+    color: var(--color-fg-muted);
     min-height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .status.success {
+    color: var(--color-success-fg);
+  }
+
+  .status.error {
+    color: var(--color-danger-fg);
   }
 </style>
 </head>
 <body>
 <div class="container">
-  <h2>🎙️ Kokoro Voice Settings</h2>
+  <div class="header">
+    <svg class="octicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <path d="M7.563 2.069A.75.75 0 0 1 8 2.75v10.5a.75.75 0 0 1-1.238.57L3.472 11H1.75A1.75 1.75 0 0 1 0 9.25v-2.5C0 5.784.784 5 1.75 5h1.723l3.289-2.82a.75.75 0 0 1 .801-.111ZM1.75 6.5a.25.25 0 0 0-.25.25v2.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .49.182l2.26 1.938V4.38L4.24 6.318a.75.75 0 0 1-.49.182Zm9.47-2.72a.75.75 0 0 1 1.06 0 7.25 7.25 0 0 1 0 10.25.75.75 0 0 1-1.06-1.06 5.75 5.75 0 0 0 0-8.13.75.75 0 0 1 0-1.06Zm1.77-1.77a.75.75 0 0 1 1.06 0 9.75 9.75 0 0 1 0 13.79.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.67.75.75 0 0 1 0-1.06Z"></path>
+    </svg>
+    <h3>Broice Voice Settings</h3>
+  </div>
   
   <div class="form-group">
-    <label for="voice">Voice Selection</label>
+    <label for="voice">Voice</label>
     <select id="voice">
       <optgroup label="American Female">
         <option value="af_sarah">Sarah (Warm, Natural - Default)</option>
@@ -158,7 +334,10 @@
   </div>
 
   <div class="form-group">
-    <label for="speed">Speech Speed: <span id="speed-val" class="range-value">1.0x</span></label>
+    <div class="label-with-meta">
+      <label for="speed">Speech speed</label>
+      <span id="speed-val" class="meta-value">1.00x</span>
+    </div>
     <div class="range-container">
       <input type="range" id="speed" min="0.7" max="1.5" step="0.05" value="1.0">
     </div>
@@ -166,18 +345,28 @@
 
   <div class="checkbox-group">
     <input type="checkbox" id="auto_read" checked>
-    <label for="auto_read" style="margin-bottom:0; cursor:pointer;">Automatically read Copilot responses</label>
+    <label for="auto_read">Automatically read Copilot responses</label>
   </div>
 
   <div class="form-group">
-    <label for="test-text">Sample Test Phrase</label>
-    <input type="text" id="test-text" value="Hello! This is a test of your local neural voice.">
+    <label for="test-text">Sample phrase</label>
+    <input type="text" id="test-text" value="Bro, this is a test of your local neural voice.">
   </div>
 
   <div class="actions">
-    <button class="btn-test" id="test-btn">▶️ Test</button>
-    <button class="btn-stop" id="stop-btn">⏹️ Stop</button>
-    <button class="btn-save" id="save-btn">Save</button>
+    <button class="btn btn-secondary" id="test-btn">
+      <svg class="octicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M4.75 2.5a.75.75 0 0 0-.75.75v9.5c0 .614.664 1 1.2.693l8.25-4.75a.75.75 0 0 0 0-1.386L5.2 2.557A.75.75 0 0 0 4.75 2.5Z"></path>
+      </svg>
+      Test
+    </button>
+    <button class="btn btn-danger" id="stop-btn">
+      <svg class="octicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M3.75 2.5a1.25 1.25 0 0 0-1.25 1.25v8.5c0 .69.56 1.25 1.25 1.25h8.5c.69 0 1.25-.56 1.25-1.25v-8.5c0-.69-.56-1.25-1.25-1.25h-8.5Z"></path>
+      </svg>
+      Stop
+    </button>
+    <button class="btn btn-primary" id="save-btn">Save</button>
   </div>
 
   <div class="status" id="status-msg"></div>
@@ -195,7 +384,7 @@
   const statusMsg = document.getElementById('status-msg');
 
   speedSlider.addEventListener('input', () => {
-    speedVal.textContent = speedSlider.value + 'x';
+    speedVal.textContent = parseFloat(speedSlider.value).toFixed(2) + 'x';
   });
 
   async function loadSettings() {
@@ -205,18 +394,21 @@
       if (data.voice) voiceSelect.value = data.voice;
       if (data.speed) {
         speedSlider.value = data.speed;
-        speedVal.textContent = data.speed + 'x';
+        speedVal.textContent = parseFloat(data.speed).toFixed(2) + 'x';
       }
       if (data.auto_read !== undefined) autoReadCheck.checked = data.auto_read;
+      if (data.sample_phrase) testText.value = data.sample_phrase;
     } catch (e) {}
   }
 
   saveBtn.addEventListener('click', async () => {
+    statusMsg.className = 'status';
     statusMsg.textContent = 'Saving...';
     const cfg = {
       voice: voiceSelect.value,
       speed: parseFloat(speedSlider.value),
-      auto_read: autoReadCheck.checked
+      auto_read: autoReadCheck.checked,
+      sample_phrase: testText.value
     };
     try {
       await fetch('/api/config', {
@@ -224,14 +416,20 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg)
       });
-      statusMsg.textContent = '✓ Settings saved!';
-      setTimeout(() => statusMsg.textContent = '', 3000);
+      statusMsg.className = 'status success';
+      statusMsg.textContent = 'Settings saved';
+      setTimeout(() => {
+        statusMsg.textContent = '';
+        statusMsg.className = 'status';
+      }, 3000);
     } catch (err) {
+      statusMsg.className = 'status error';
       statusMsg.textContent = 'Error saving settings';
     }
   });
 
   testBtn.addEventListener('click', async () => {
+    statusMsg.className = 'status';
     statusMsg.textContent = 'Playing test audio...';
     try {
       await fetch('/api/test-speech', {
@@ -243,9 +441,14 @@
           speed: parseFloat(speedSlider.value)
         })
       });
-      statusMsg.textContent = '✓ Played audio';
-      setTimeout(() => statusMsg.textContent = '', 3000);
+      statusMsg.className = 'status success';
+      statusMsg.textContent = 'Playback complete';
+      setTimeout(() => {
+        statusMsg.textContent = '';
+        statusMsg.className = 'status';
+      }, 3000);
     } catch (err) {
+      statusMsg.className = 'status error';
       statusMsg.textContent = 'Error playing audio';
     }
   });
@@ -253,9 +456,11 @@
   stopBtn.addEventListener('click', async () => {
     try {
       await fetch('/api/stop-speech', { method: 'POST' });
-      statusMsg.textContent = '⏹️ Speech stopped';
+      statusMsg.className = 'status';
+      statusMsg.textContent = 'Speech stopped';
       setTimeout(() => statusMsg.textContent = '', 3000);
     } catch (err) {
+      statusMsg.className = 'status error';
       statusMsg.textContent = 'Error stopping speech';
     }
   });
