@@ -8,12 +8,15 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
+import { isForegroundSession } from "./active-session.mjs";
 import { createSpeechResponseBatcher } from "./speech-response-batcher.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const BIN_DIR = path.join(__dirname, "bin");
+const BOOTSTRAP_LOCK_DIR = path.join(BIN_DIR, ".bootstrap-lock");
+const BOOTSTRAP_LOCK_OWNER = path.join(BOOTSTRAP_LOCK_DIR, "pid");
 const VENV_DIR = path.join(BIN_DIR, "venv");
 const PYTHON_PATH = path.join(VENV_DIR, "bin", "python");
 const MODEL_PATH = path.join(BIN_DIR, "kokoro-v1.0.onnx");
@@ -57,6 +60,50 @@ function saveConfig(cfg) {
 let isReady = false;
 let isBootstrapping = false;
 
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isProcessRunning(pid) {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        return error?.code === "EPERM";
+    }
+}
+
+async function acquireBootstrapLock() {
+    while (true) {
+        try {
+            fs.mkdirSync(BOOTSTRAP_LOCK_DIR);
+            fs.writeFileSync(BOOTSTRAP_LOCK_OWNER, String(process.pid), "utf8");
+            return;
+        } catch (error) {
+            if (error?.code !== "EEXIST") throw error;
+
+            let ownerPid = null;
+            try {
+                ownerPid = Number.parseInt(fs.readFileSync(BOOTSTRAP_LOCK_OWNER, "utf8"), 10);
+            } catch {}
+
+            if (ownerPid !== null && !isProcessRunning(ownerPid)) {
+                fs.rmSync(BOOTSTRAP_LOCK_DIR, { recursive: true, force: true });
+                continue;
+            }
+            if (ownerPid === null) {
+                const lockAge = Date.now() - fs.statSync(BOOTSTRAP_LOCK_DIR).mtimeMs;
+                if (lockAge > 5000) {
+                    fs.rmSync(BOOTSTRAP_LOCK_DIR, { recursive: true, force: true });
+                    continue;
+                }
+            }
+            await delay(250);
+        }
+    }
+}
+
 async function isSupportedPython(pythonPath) {
     try {
         const { stdout } = await execFileAsync(pythonPath, [
@@ -93,9 +140,12 @@ async function hasPythonDependencies() {
 async function bootstrap(session) {
     if (isReady || isBootstrapping) return;
     isBootstrapping = true;
+    let ownsBootstrapLock = false;
 
     try {
         if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
+        await acquireBootstrapLock();
+        ownsBootstrapLock = true;
 
         const needsVenv = !fs.existsSync(PYTHON_PATH) || !(await isSupportedPython(PYTHON_PATH));
         const needsDependencies = needsVenv || !(await hasPythonDependencies());
@@ -113,9 +163,9 @@ async function bootstrap(session) {
 
             if (needsDependencies) {
                 await session.log("Installing Broice Python dependencies...", { ephemeral: true });
-                const pipPath = path.join(VENV_DIR, "bin", "pip");
-                await execFileAsync(pipPath, ["install", "--upgrade", "pip"]);
-                await execFileAsync(pipPath, [
+                await execFileAsync(PYTHON_PATH, ["-m", "pip", "install", "--upgrade", "pip"]);
+                await execFileAsync(PYTHON_PATH, [
+                    "-m", "pip",
                     "install", "--upgrade", "kokoro-onnx", "soundfile", "sounddevice"
                 ]);
             }
@@ -141,6 +191,9 @@ async function bootstrap(session) {
 
         isReady = true;
     } finally {
+        if (ownsBootstrapLock) {
+            fs.rmSync(BOOTSTRAP_LOCK_DIR, { recursive: true, force: true });
+        }
         isBootstrapping = false;
     }
 }
@@ -214,9 +267,8 @@ function stopSpeech() {
 
 async function isCurrentSessionForeground() {
     try {
-        // joinSession hides its client, but the session retains the shared RPC connection.
         const response = await session.connection.sendRequest("session.getForeground", {});
-        return response?.sessionId === session.sessionId;
+        return isForegroundSession(response, session);
     } catch (error) {
         if (!foregroundCheckWarningLogged) {
             foregroundCheckWarningLogged = true;
