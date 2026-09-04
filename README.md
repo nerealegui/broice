@@ -6,6 +6,14 @@ It reads Copilot's responses out loud using a local neural text-to-speech model,
 
 Broice runs the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) ONNX model (~82M parameters) under the hood.
 
+## Install with GitHub Copilot
+
+> **Paste this prompt into GitHub Copilot:**
+>
+> `Install Broice from https://github.com/nerealegui/broice/tree/main`
+
+Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions. Because this repository is currently private, you must have access to it before installing.
+
 <p align="center">
   <img src="docs/settings-panel.png" alt="Broice voice settings panel inside GitHub Copilot" width="480">
 </p>
