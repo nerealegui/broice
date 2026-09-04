@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
+import { createSpeechResponseBatcher } from "./speech-response-batcher.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -171,6 +172,16 @@ async function speakText(text, voiceOverride = null, speedOverride = null, langO
     });
 }
 
+const finalResponseBatcher = createSpeechResponseBatcher({
+    speak: speakText,
+    shouldAutoRead: () => loadConfig().auto_read !== false,
+});
+
+function stopAutoReadAndPlayback() {
+    const discardedPending = finalResponseBatcher.suppressInteraction();
+    return stopSpeech() || discardedPending;
+}
+
 let serverPort = 49215;
 
 const server = http.createServer((req, res) => {
@@ -201,7 +212,7 @@ const server = http.createServer((req, res) => {
             }
         });
     } else if (req.method === "POST" && req.url === "/api/stop-speech") {
-        const stopped = stopSpeech();
+        const stopped = stopAutoReadAndPlayback();
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: true, stopped }));
     } else if (req.method === "POST" && req.url === "/api/test-speech") {
@@ -272,7 +283,7 @@ const session = await joinSession({
             },
             skipPermission: true,
             handler: async () => {
-                const stopped = stopSpeech();
+                const stopped = stopAutoReadAndPlayback();
                 return stopped ? "Speech playback stopped." : "No active speech was playing.";
             },
         },
@@ -307,8 +318,10 @@ const session = await joinSession({
         },
         onUserPromptSubmitted: async (input) => {
             stopSpeech();
+            finalResponseBatcher.beginInteraction();
             const text = input.prompt.trim().toLowerCase();
             if (text === "/stop" || text === "/quiet" || text === "/silence" || text === "/shh" || text === "/cancel") {
+                finalResponseBatcher.suppressInteraction();
                 return {
                     additionalContext: "The user commanded to stop voice playback. Confirm briefly that audio has been stopped."
                 };
@@ -325,10 +338,13 @@ const session = await joinSession({
 bootstrap(session).catch(() => {});
 
 session.on("assistant.message", async (event) => {
-    const config = loadConfig();
-    if (config.auto_read === false) return;
-    const content = event?.data?.content;
-    if (content) {
-        await speakText(content);
-    }
+    finalResponseBatcher.queueAssistantMessage(event);
+});
+
+session.on("session.idle", async (event) => {
+    await finalResponseBatcher.finishInteraction(event);
+});
+
+session.on("session.error", () => {
+    finalResponseBatcher.suppressInteraction();
 });

@@ -17,7 +17,7 @@ Broice runs the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) ONNX model
 | Feature | Description |
 |---|---|
 | **Fully local** | Neural inference runs on your Mac's CPU / Neural Engine via ONNX Runtime. Nothing is sent anywhere. |
-| **Auto-read responses** | Speaks Copilot replies as they arrive, with Markdown cleaned for natural speech. |
+| **Auto-read responses** | Speaks each final Copilot reply once the full tool-use loop finishes, with Markdown cleaned for natural speech. |
 | **Settings Canvas** | A native-feeling side panel (GitHub Primer styled) to pick a voice, tune speed, and test audio. |
 | **Mid-speech stop** | Cancel playback instantly via button, slash command, or natural language. |
 | **Smart speech rules** | Skips emojis, and reads `install.sh` as "install dot sh" instead of two separate words. |
@@ -45,7 +45,7 @@ Broice runs the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) ONNX model
 │     ┌──────────────────────────────────────────────────────────┐               │
 │     │  extension.mjs                                           │               │
 │     │  • Bootstraps venv + model weights on first launch       │               │
-│     │  • Listens for "assistant.message" → speaks the reply    │               │
+│     │  • Buffers "assistant.message" until "session.idle"      │               │
 │     │  • Cleans Markdown, strips emojis, expands code names    │               │
 │     │  • Serves the Canvas UI over a local HTTP server         │               │
 │     │  • Tools: speak / stop_speaking / configure_voice        │               │
@@ -72,7 +72,7 @@ Broice runs the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) ONNX model
 ### Speech flow
 
 ```
-Copilot reply
+Final Copilot reply (after session.idle)
      │
      ▼
 cleanMarkdownForSpeech()
@@ -200,6 +200,8 @@ From the panel you can pick a voice, adjust speed from 0.7x to 1.5x, toggle auto
 ```
 broice/
 ├── extension.mjs        Copilot extension: tools, canvas, hooks, HTTP server
+├── speech-response-batcher.mjs
+│                        Holds the final reply until the session becomes idle
 ├── speak.py             Python worker: ONNX inference + afplay playback
 ├── ui/index.html        Settings panel frontend (HTML/CSS/JS, Primer styled)
 ├── config.json          Persisted settings
