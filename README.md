@@ -30,7 +30,7 @@ code becomes active the next time Copilot reloads extensions or restarts.
 |---|---|
 | **Fully local** | Neural inference runs on your Mac's CPU / Neural Engine via ONNX Runtime. Nothing is sent anywhere. |
 | **Auto-read responses** | Speaks each final Copilot reply once the full tool-use loop finishes, but only from the session currently shown. |
-| **Live voice dashboard** | A theme-aware side panel to configure speech and watch setup, speaking, idle, and error state update live. |
+| **Live voice settings** | A theme-aware side panel to configure speech and watch setup, speaking, idle, and error state update live. |
 | **Multi-session safe** | Serializes shared environment setup so simultaneous extension processes cannot corrupt the voice runtime. |
 | **Mid-speech stop** | Cancel playback instantly via button, slash command, or natural language. |
 | **Smart speech rules** | Skips emojis, and reads `install.sh` as "install dot sh" instead of two separate words. |
@@ -173,7 +173,7 @@ autocomplete:
 
 | Command | Behavior |
 |---|---|
-| `/voice` | Opens or focuses the live voice dashboard directly. |
+| `/voice` | Opens or focuses the live voice settings panel directly. |
 | `/speak <text>` | Speaks the supplied text once without generating an assistant reply or duplicate auto-read. |
 | `/stop` | Stops playback and suppresses any pending auto-read. |
 
@@ -184,7 +184,7 @@ discoverable in desktop slash autocomplete while preserving direct command
 execution in the terminal.
 
 The conversational shortcuts `/tts`, `/voices`, `voice settings`, `/quiet`,
-`/silence`, `/shh`, and `/cancel` remain available. From the dashboard you can
+`/silence`, `/shh`, and `/cancel` remain available. From the settings panel you can
 pick a voice, adjust speed from 0.7x to 1.5x, toggle automatic reading, restrict
 speech to the session currently shown, edit and save your sample phrase, preview
 audio, and cancel playback. Its setup, speaking, idle, and error state updates
@@ -272,7 +272,7 @@ The `broice-voice-settings` canvas exposes agent-callable actions:
 | Action | Purpose |
 |---|---|
 | `get_state` | Read current setup, playback, and configuration state |
-| `update_settings` | Validate and update voice dashboard settings |
+| `update_settings` | Validate and update voice settings |
 | `preview` | Speak preview text with optional voice and speed overrides |
 | `stop` | Stop playback and suppress pending auto-read |
 
