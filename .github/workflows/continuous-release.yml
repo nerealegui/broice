@@ -23,7 +23,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist/broice/ui
+          mkdir -p \
+            dist/broice/ui \
+            dist/broice/skills/voice \
+            dist/broice/skills/speak \
+            dist/broice/skills/stop
           cp \
             extension.mjs \
             auto-updater.mjs \
@@ -36,6 +40,9 @@ jobs:
             README.md \
             dist/broice/
           cp ui/index.html dist/broice/ui/
+          cp skills/voice/SKILL.md dist/broice/skills/voice/
+          cp skills/speak/SKILL.md dist/broice/skills/speak/
+          cp skills/stop/SKILL.md dist/broice/skills/stop/
           printf '%s' "$GITHUB_SHA" > dist/broice/.broice-version
           tar -czf dist/broice.tar.gz -C dist/broice .
           checksum="$(sha256sum dist/broice.tar.gz | cut -d ' ' -f 1)"

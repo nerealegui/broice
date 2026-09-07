@@ -3,477 +3,537 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Broice Voice Settings</title>
+<title>Broice Voice Dashboard</title>
 <style>
-  :root {
-    --color-canvas-default: #ffffff;
-    --color-canvas-subtle: #f6f8fa;
-    --color-border-default: #d0d7de;
-    --color-border-muted: #d8dee4;
-    --color-fg-default: #1f2328;
-    --color-fg-muted: #656d76;
-    --color-fg-subtle: #6e7781;
-    --color-accent-fg: #0969da;
-    --color-accent-emphasis: #0969da;
-    --color-success-fg: #1a7f37;
-    --color-success-emphasis: #1f883d;
-    --color-success-hover: #1a7f37;
-    --color-danger-fg: #cf222e;
-    --color-danger-emphasis: #a40e26;
-    --color-btn-bg: #f6f8fa;
-    --color-btn-border: #d0d7de;
-    --color-btn-hover-bg: #f3f4f6;
-    --color-btn-hover-border: #1f232826;
-    --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  }
+  * { box-sizing: border-box; }
 
-  * {
-    box-sizing: border-box;
+  :root {
+    color-scheme: light dark;
   }
 
   body {
-    font-family: var(--font-stack);
-    background-color: var(--color-canvas-default);
-    color: var(--color-fg-default);
     margin: 0;
-    padding: 16px;
-    font-size: 14px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
+    min-width: 280px;
+    background: var(--background-color-default, #ffffff);
+    color: var(--text-color-default, #1f2328);
+    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    font-size: var(--text-body-medium, 14px);
+    line-height: var(--leading-body-medium, 20px);
   }
 
-  .container {
-    max-width: 480px;
-    margin: 0 auto;
-    background-color: var(--color-canvas-subtle);
+  button, input, select {
+    font: inherit;
+  }
+
+  .dashboard {
+    min-height: 100vh;
     padding: 20px;
-    border-radius: 8px;
-    border: 1px solid var(--color-border-default);
   }
 
-  .header {
+  .eyebrow {
+    margin: 0 0 4px;
+    color: var(--text-color-muted, #656d76);
+    font-size: var(--text-body-small, 12px);
+    font-weight: var(--font-weight-semibold, 600);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin: 0;
+    font-family: var(--font-sans-display, var(--font-sans, sans-serif));
+    font-size: var(--text-title-large, 26px);
+    font-weight: var(--font-weight-semibold, 600);
+    line-height: var(--leading-title-large, 32px);
+  }
+
+  .subtitle {
+    margin: 6px 0 18px;
+    color: var(--text-color-muted, #656d76);
+  }
+
+  .card {
+    margin-top: 12px;
+    padding: 16px;
+    border: 1px solid var(--border-color-default, #d0d7de);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--background-color-default, #ffffff) 94%, var(--text-color-muted, #656d76));
+  }
+
+  .status-card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+
+  .status-dot {
+    width: 12px;
+    height: 12px;
+    margin-top: 4px;
+    border-radius: 50%;
+    background: var(--text-color-muted, #656d76);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--text-color-muted, #656d76) 16%, transparent);
+  }
+
+  .status-dot[data-phase="setup"] {
+    background: var(--true-color-blue, #0969da);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  .status-dot[data-phase="speaking"] {
+    background: var(--true-color-blue, #0969da);
+    animation: pulse 0.8s ease-in-out infinite;
+  }
+
+  .status-dot[data-phase="error"] {
+    background: var(--true-color-red, #cf222e);
+    box-shadow: 0 0 0 4px var(--true-color-red-muted, #ffebe9);
+  }
+
+  @keyframes pulse {
+    50% { transform: scale(0.72); opacity: 0.55; }
+  }
+
+  .status-heading {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 12px;
-    margin-bottom: 20px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--color-border-muted);
   }
 
-  .header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--color-fg-default);
-    background: transparent;
+  .status-heading strong {
+    font-weight: var(--font-weight-semibold, 600);
+    text-transform: capitalize;
   }
 
-  .header .octicon {
-    color: var(--color-fg-muted);
+  .status-time, .status-message, .field-note {
+    color: var(--text-color-muted, #656d76);
+    font-size: var(--text-body-small, 12px);
+  }
+
+  .status-message {
+    margin: 3px 0 0;
+  }
+
+  .status-error {
+    margin: 8px 0 0;
+    color: var(--true-color-red, #cf222e);
+    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-size: var(--text-code-inline, 12px);
+    overflow-wrap: anywhere;
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .summary-item {
+    padding: 12px;
+    border: 1px solid var(--border-color-default, #d0d7de);
+    border-radius: 8px;
+  }
+
+  .summary-label {
     display: block;
-    flex: 0 0 auto;
-    overflow: visible;
+    color: var(--text-color-muted, #656d76);
+    font-size: var(--text-body-small, 12px);
   }
 
-  .form-group {
-    margin-bottom: 16px;
+  .summary-value {
+    display: block;
+    margin-top: 2px;
+    font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+    font-weight: var(--font-weight-semibold, 600);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .section-heading {
+    margin: 0 0 14px;
+    font-size: var(--text-title-medium, 18px);
+    font-weight: var(--font-weight-semibold, 600);
+  }
+
+  .field {
+    margin-top: 14px;
+  }
+
+  .field:first-of-type {
+    margin-top: 0;
+  }
+
+  .label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
   }
 
   label {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-fg-default);
-  }
-
-  .label-with-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .meta-value {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--color-fg-muted);
-    font-family: var(--font-mono);
+    font-weight: var(--font-weight-semibold, 600);
   }
 
   select, input[type="text"] {
     width: 100%;
-    padding: 5px 12px;
-    font-size: 14px;
-    line-height: 20px;
-    font-family: var(--font-stack);
-    color: var(--color-fg-default);
-    background-color: var(--color-canvas-default);
-    border: 1px solid var(--color-border-default);
-    border-radius: 6px;
-    outline: none;
-    transition: border-color 80ms cubic-bezier(0.33, 1, 0.68, 1), box-shadow 80ms cubic-bezier(0.33, 1, 0.68, 1);
+    min-height: 36px;
+    padding: 7px 10px;
+    color: var(--text-color-default, #1f2328);
+    background: var(--background-color-default, #ffffff);
+    border: 1px solid var(--border-color-default, #d0d7de);
+    border-radius: 7px;
   }
 
-  select:focus, input[type="text"]:focus {
-    border-color: var(--color-accent-emphasis);
-    box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.4);
-  }
-
-  /* Primer-styled Range Slider */
-  .range-container {
-    display: flex;
-    align-items: center;
-    padding: 4px 0;
+  select:focus, input:focus, button:focus-visible {
+    outline: 2px solid var(--color-focus-outline, #0969da);
+    outline-offset: 2px;
   }
 
   input[type="range"] {
-    -webkit-appearance: none;
-    appearance: none;
     width: 100%;
-    height: 4px;
-    border-radius: 2px;
-    background: var(--color-border-default);
-    outline: none;
-    margin: 8px 0;
+    accent-color: var(--true-color-blue, #0969da);
   }
 
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--color-accent-fg);
-    cursor: pointer;
-    border: 2px solid var(--color-canvas-default);
-    box-shadow: 0 1px 3px rgba(31, 35, 40, 0.2);
-    transition: transform 0.1s ease;
+  .toggle-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    align-items: center;
+    padding: 12px 0;
+    border-top: 1px solid var(--border-color-default, #d0d7de);
   }
 
-  input[type="range"]::-webkit-slider-thumb:hover {
-    transform: scale(1.15);
+  .toggle-row:first-of-type {
+    border-top: 0;
   }
 
-  input[type="range"]:focus-visible {
-    outline: 2px solid var(--color-accent-emphasis);
-    outline-offset: 4px;
+  .toggle-copy label {
+    display: block;
   }
 
-  /* Primer Checkbox */
-  .checkbox-group {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin-bottom: 16px;
-    padding: 4px 0;
+  .toggle-copy span {
+    display: block;
+    margin-top: 2px;
+    color: var(--text-color-muted, #656d76);
+    font-size: var(--text-body-small, 12px);
   }
 
-  .checkbox-group input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
-    margin: 2px 0 0 0;
-    cursor: pointer;
-    accent-color: var(--color-accent-emphasis);
-    border-radius: 4px;
+  input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--true-color-blue, #0969da);
   }
 
-  .checkbox-group label {
-    font-size: 13px;
-    font-weight: 400;
-    color: var(--color-fg-default);
-    cursor: pointer;
-    margin-bottom: 0;
-    user-select: none;
-  }
-
-  /* Primer Button System */
   .actions {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-    margin-top: 20px;
-    padding-top: 16px;
-    border-top: 1px solid var(--color-border-muted);
+    margin-top: 16px;
   }
 
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 5px 16px;
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 20px;
-    border-radius: 6px;
+  button {
+    min-height: 36px;
+    padding: 7px 12px;
+    color: var(--text-color-default, #1f2328);
+    background: var(--background-color-default, #ffffff);
+    border: 1px solid var(--border-color-default, #d0d7de);
+    border-radius: 7px;
     cursor: pointer;
-    border: 1px solid var(--color-btn-border);
-    background-color: var(--color-btn-bg);
-    color: var(--color-fg-default);
-    font-family: var(--font-stack);
-    text-decoration: none;
-    user-select: none;
-    transition: 80ms cubic-bezier(0.33, 1, 0.68, 1);
-    box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+    font-weight: var(--font-weight-semibold, 600);
   }
 
-  .btn .octicon {
-    fill: currentColor;
-    flex-shrink: 0;
+  button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--background-color-default, #ffffff) 90%, var(--true-color-blue-muted, #ddf4ff));
   }
 
-  .btn:hover {
-    background-color: var(--color-btn-hover-bg);
-    border-color: var(--color-btn-hover-border);
+  button.primary {
+    color: var(--color-white, #ffffff);
+    background: var(--true-color-blue, #0969da);
+    border-color: var(--true-color-blue, #0969da);
   }
 
-  .btn:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.4);
+  button.danger {
+    color: var(--true-color-red, #cf222e);
   }
 
-  .btn:active {
-    background-color: #ebecf0;
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 
-  .btn-primary {
-    background-color: var(--color-success-emphasis);
-    border-color: rgba(31, 35, 40, 0.15);
-    color: #ffffff;
-    flex: 1;
+  .save-status {
+    min-height: 20px;
+    margin: 10px 0 0;
+    color: var(--text-color-muted, #656d76);
+    font-size: var(--text-body-small, 12px);
+    text-align: right;
   }
 
-  .btn-primary:hover {
-    background-color: var(--color-success-hover);
-    border-color: rgba(31, 35, 40, 0.15);
+  .save-status.error {
+    color: var(--true-color-red, #cf222e);
   }
 
-  .btn-primary:focus-visible {
-    box-shadow: 0 0 0 3px rgba(46, 160, 67, 0.4);
+  @media (max-width: 360px) {
+    .dashboard { padding: 14px; }
+    .summary-grid, .actions { grid-template-columns: 1fr; }
   }
 
-  .btn-primary:active {
-    background-color: #187733;
-  }
-
-  .btn-secondary {
-    flex: 1;
-  }
-
-  .btn-danger {
-    color: var(--color-danger-fg);
-    flex: 1;
-  }
-
-  .btn-danger:hover {
-    background-color: var(--color-danger-emphasis);
-    border-color: var(--color-danger-fg);
-    color: #ffffff;
-  }
-
-  .btn-danger:hover .octicon {
-    fill: #ffffff;
-  }
-
-  .btn-danger:focus-visible {
-    box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.4);
-  }
-
-  .status {
-    margin-top: 12px;
-    font-size: 12px;
-    text-align: center;
-    color: var(--color-fg-muted);
-    min-height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-  }
-
-  .status.success {
-    color: var(--color-success-fg);
-  }
-
-  .status.error {
-    color: var(--color-danger-fg);
+  @media (prefers-reduced-motion: reduce) {
+    .status-dot { animation: none !important; }
   }
 </style>
 </head>
 <body>
-<div class="container">
-  <div class="header">
-    <svg class="octicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <path d="M7.563 2.069A.75.75 0 0 1 8 2.75v10.5a.75.75 0 0 1-1.238.57L3.472 11H1.75A1.75 1.75 0 0 1 0 9.25v-2.5C0 5.784.784 5 1.75 5h1.723l3.289-2.82a.75.75 0 0 1 .801-.111ZM1.75 6.5a.25.25 0 0 0-.25.25v2.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .49.182l2.26 1.938V4.38L4.24 6.318a.75.75 0 0 1-.49.182Zm9.47-2.72a.75.75 0 0 1 1.06 0 7.25 7.25 0 0 1 0 10.25.75.75 0 0 1-1.06-1.06 5.75 5.75 0 0 0 0-8.13.75.75 0 0 1 0-1.06Zm1.77-1.77a.75.75 0 0 1 1.06 0 9.75 9.75 0 0 1 0 13.79.75.75 0 0 1-1.06-1.06 8.25 8.25 0 0 0 0-11.67.75.75 0 0 1 0-1.06Z"></path>
-    </svg>
-    <h3>Broice Voice Settings</h3>
-  </div>
-  
-  <div class="form-group">
-    <label for="voice">Voice</label>
-    <select id="voice">
-      <optgroup label="American Female">
-        <option value="af_sarah">Sarah (Warm, Natural - Default)</option>
-        <option value="af_bella">Bella (Soft, Clear)</option>
-        <option value="af_nicole">Nicole (Crisp, Professional)</option>
-        <option value="af_sky">Sky (Dynamic)</option>
-      </optgroup>
-      <optgroup label="American Male">
-        <option value="am_adam">Adam (Deep, Articulate)</option>
-        <option value="am_michael">Michael (Friendly, Standard)</option>
-      </optgroup>
-      <optgroup label="British Female">
-        <option value="bf_emma">Emma (Conversational British)</option>
-        <option value="bf_isabella">Isabella (Articulate British)</option>
-      </optgroup>
-      <optgroup label="British Male">
-        <option value="bm_george">George (Classic British)</option>
-        <option value="bm_lewis">Lewis (Casual British)</option>
-      </optgroup>
-    </select>
-  </div>
+<main class="dashboard">
+  <p class="eyebrow">Local Kokoro TTS</p>
+  <h1>Voice dashboard</h1>
+  <p class="subtitle">Tune how Copilot sounds. Audio and inference stay on this Mac.</p>
 
-  <div class="form-group">
-    <div class="label-with-meta">
-      <label for="speed">Speech speed</label>
-      <span id="speed-val" class="meta-value">1.00x</span>
+  <section class="card status-card" aria-live="polite">
+    <span class="status-dot" id="status-dot" data-phase="setup"></span>
+    <div>
+      <div class="status-heading">
+        <strong id="status-phase">Setup</strong>
+        <span class="status-time" id="status-time">Connecting...</span>
+      </div>
+      <p class="status-message" id="status-message">Connecting to Broice...</p>
+      <p class="status-error" id="status-error" hidden></p>
     </div>
-    <div class="range-container">
-      <input type="range" id="speed" min="0.7" max="1.5" step="0.05" value="1.0">
+  </section>
+
+  <section class="card summary-grid" aria-label="Current voice summary">
+    <div class="summary-item">
+      <span class="summary-label">Current voice</span>
+      <span class="summary-value" id="current-voice">--</span>
     </div>
-  </div>
+    <div class="summary-item">
+      <span class="summary-label">Current speed</span>
+      <span class="summary-value" id="current-speed">--</span>
+    </div>
+  </section>
 
-  <div class="checkbox-group">
-    <input type="checkbox" id="auto_read" checked>
-    <label for="auto_read">Automatically read Copilot responses</label>
-  </div>
+  <section class="card">
+    <h2 class="section-heading">Voice</h2>
+    <div class="field">
+      <label for="voice">Voice profile</label>
+      <select id="voice">
+        <optgroup label="American female">
+          <option value="af_sarah">Sarah - warm, natural</option>
+          <option value="af_bella">Bella - soft, clear</option>
+          <option value="af_nicole">Nicole - crisp, professional</option>
+          <option value="af_sky">Sky - dynamic</option>
+        </optgroup>
+        <optgroup label="American male">
+          <option value="am_adam">Adam - deep, articulate</option>
+          <option value="am_michael">Michael - friendly, standard</option>
+        </optgroup>
+        <optgroup label="British female">
+          <option value="bf_emma">Emma - conversational</option>
+          <option value="bf_isabella">Isabella - formal, articulate</option>
+        </optgroup>
+        <optgroup label="British male">
+          <option value="bm_george">George - classic British</option>
+          <option value="bm_lewis">Lewis - casual British</option>
+        </optgroup>
+      </select>
+    </div>
 
-  <div class="checkbox-group">
-    <input type="checkbox" id="active_session_only" checked>
-    <label for="active_session_only">Only speak for the session currently shown</label>
-  </div>
+    <div class="field">
+      <div class="label-row">
+        <label for="speed">Speech speed</label>
+        <span class="field-note" id="speed-value">1.00x</span>
+      </div>
+      <input type="range" id="speed" min="0.7" max="1.5" step="0.05" value="1">
+    </div>
+  </section>
 
-  <div class="form-group">
-    <label for="test-text">Sample phrase</label>
-    <input type="text" id="test-text" value="Bro, this is a test of your local neural voice.">
-  </div>
+  <section class="card">
+    <h2 class="section-heading">Reading behavior</h2>
+    <div class="toggle-row">
+      <div class="toggle-copy">
+        <label for="auto-read">Auto-read replies</label>
+        <span>Speak each final Copilot response once.</span>
+      </div>
+      <input type="checkbox" id="auto-read">
+    </div>
+    <div class="toggle-row">
+      <div class="toggle-copy">
+        <label for="active-session-only">Active session only</label>
+        <span>Stay quiet when this session is not currently shown.</span>
+      </div>
+      <input type="checkbox" id="active-session-only">
+    </div>
+  </section>
 
-  <div class="actions">
-    <button class="btn btn-secondary" id="test-btn">
-      <svg class="octicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <path d="M4.75 2.5a.75.75 0 0 0-.75.75v9.5c0 .614.664 1 1.2.693l8.25-4.75a.75.75 0 0 0 0-1.386L5.2 2.557A.75.75 0 0 0 4.75 2.5Z"></path>
-      </svg>
-      Test
-    </button>
-    <button class="btn btn-danger" id="stop-btn">
-      <svg class="octicon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <path d="M3.75 2.5a1.25 1.25 0 0 0-1.25 1.25v8.5c0 .69.56 1.25 1.25 1.25h8.5c.69 0 1.25-.56 1.25-1.25v-8.5c0-.69-.56-1.25-1.25-1.25h-8.5Z"></path>
-      </svg>
-      Stop
-    </button>
-    <button class="btn btn-primary" id="save-btn">Save</button>
-  </div>
-
-  <div class="status" id="status-msg"></div>
-</div>
+  <section class="card">
+    <h2 class="section-heading">Preview</h2>
+    <div class="field">
+      <label for="sample-phrase">Sample phrase</label>
+      <input type="text" id="sample-phrase" maxlength="1000">
+    </div>
+    <div class="actions">
+      <button type="button" id="preview">Preview</button>
+      <button type="button" class="danger" id="stop">Stop</button>
+      <button type="button" class="primary" id="save">Save</button>
+    </div>
+    <p class="save-status" id="save-status" aria-live="polite"></p>
+  </section>
+</main>
 
 <script>
-  const voiceSelect = document.getElementById('voice');
-  const speedSlider = document.getElementById('speed');
-  const speedVal = document.getElementById('speed-val');
-  const autoReadCheck = document.getElementById('auto_read');
-  const activeSessionOnlyCheck = document.getElementById('active_session_only');
-  const testText = document.getElementById('test-text');
-  const testBtn = document.getElementById('test-btn');
-  const stopBtn = document.getElementById('stop-btn');
-  const saveBtn = document.getElementById('save-btn');
-  const statusMsg = document.getElementById('status-msg');
+  const elements = {
+    statusDot: document.getElementById("status-dot"),
+    statusPhase: document.getElementById("status-phase"),
+    statusTime: document.getElementById("status-time"),
+    statusMessage: document.getElementById("status-message"),
+    statusError: document.getElementById("status-error"),
+    currentVoice: document.getElementById("current-voice"),
+    currentSpeed: document.getElementById("current-speed"),
+    voice: document.getElementById("voice"),
+    speed: document.getElementById("speed"),
+    speedValue: document.getElementById("speed-value"),
+    autoRead: document.getElementById("auto-read"),
+    activeSessionOnly: document.getElementById("active-session-only"),
+    samplePhrase: document.getElementById("sample-phrase"),
+    preview: document.getElementById("preview"),
+    stop: document.getElementById("stop"),
+    save: document.getElementById("save"),
+    saveStatus: document.getElementById("save-status"),
+  };
 
-  speedSlider.addEventListener('input', () => {
-    speedVal.textContent = parseFloat(speedSlider.value).toFixed(2) + 'x';
-  });
+  let hydrated = false;
+  let formDirty = false;
+  let latestState = null;
 
-  async function loadSettings() {
-    try {
-      const res = await fetch('/api/config');
-      const data = await res.json();
-      if (data.voice) voiceSelect.value = data.voice;
-      if (data.speed) {
-        speedSlider.value = data.speed;
-        speedVal.textContent = parseFloat(data.speed).toFixed(2) + 'x';
-      }
-      if (data.auto_read !== undefined) autoReadCheck.checked = data.auto_read;
-      if (data.active_session_only !== undefined) activeSessionOnlyCheck.checked = data.active_session_only;
-      if (data.sample_phrase) testText.value = data.sample_phrase;
-    } catch (e) {}
+  function requestJson(url, options) {
+    return fetch(url, options).then(async (response) => {
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+      return body;
+    });
   }
 
-  saveBtn.addEventListener('click', async () => {
-    statusMsg.className = 'status';
-    statusMsg.textContent = 'Saving...';
-    const cfg = {
-      voice: voiceSelect.value,
-      speed: parseFloat(speedSlider.value),
-      auto_read: autoReadCheck.checked,
-      active_session_only: activeSessionOnlyCheck.checked,
-      sample_phrase: testText.value
+  function hydrateForm(config) {
+    elements.voice.value = config.voice;
+    elements.speed.value = config.speed;
+    elements.speedValue.textContent = `${Number(config.speed).toFixed(2)}x`;
+    elements.autoRead.checked = config.auto_read;
+    elements.activeSessionOnly.checked = config.active_session_only;
+    elements.samplePhrase.value = config.sample_phrase;
+    hydrated = true;
+  }
+
+  function renderState(state) {
+    latestState = state;
+    const config = state.config || {};
+    elements.statusDot.dataset.phase = state.phase;
+    elements.statusPhase.textContent = state.phase;
+    elements.statusMessage.textContent = state.message;
+    elements.statusTime.textContent = new Date(state.updated_at).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    elements.statusError.hidden = !state.error;
+    elements.statusError.textContent = state.error || "";
+    elements.currentVoice.textContent = config.voice || "--";
+    elements.currentSpeed.textContent = config.speed === undefined
+      ? "--"
+      : `${Number(config.speed).toFixed(2)}x`;
+    elements.preview.disabled = !state.ready || state.speaking;
+    elements.stop.disabled = !state.speaking;
+    if (!hydrated || !formDirty) hydrateForm(config);
+  }
+
+  function formConfig() {
+    return {
+      voice: elements.voice.value,
+      speed: Number(elements.speed.value),
+      auto_read: elements.autoRead.checked,
+      active_session_only: elements.activeSessionOnly.checked,
+      sample_phrase: elements.samplePhrase.value,
     };
+  }
+
+  function showActionStatus(message, error = false) {
+    elements.saveStatus.textContent = message;
+    elements.saveStatus.className = error ? "save-status error" : "save-status";
+  }
+
+  elements.speed.addEventListener("input", () => {
+    formDirty = true;
+    elements.speedValue.textContent = `${Number(elements.speed.value).toFixed(2)}x`;
+  });
+
+  for (const control of [
+    elements.voice,
+    elements.autoRead,
+    elements.activeSessionOnly,
+    elements.samplePhrase,
+  ]) {
+    control.addEventListener("input", () => {
+      formDirty = true;
+    });
+  }
+
+  elements.save.addEventListener("click", async () => {
+    showActionStatus("Saving...");
     try {
-      await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cfg)
+      const result = await requestJson("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formConfig()),
       });
-      statusMsg.className = 'status success';
-      statusMsg.textContent = 'Settings saved';
-      setTimeout(() => {
-        statusMsg.textContent = '';
-        statusMsg.className = 'status';
-      }, 3000);
-    } catch (err) {
-      statusMsg.className = 'status error';
-      statusMsg.textContent = 'Error saving settings';
+      formDirty = false;
+      hydrateForm(result.config);
+      showActionStatus("Settings saved.");
+    } catch (error) {
+      showActionStatus(error.message, true);
     }
   });
 
-  testBtn.addEventListener('click', async () => {
-    statusMsg.className = 'status';
-    statusMsg.textContent = 'Playing test audio...';
+  elements.preview.addEventListener("click", async () => {
+    showActionStatus("Starting preview...");
     try {
-      await fetch('/api/test-speech', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await requestJson("/api/test-speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: testText.value,
-          voice: voiceSelect.value,
-          speed: parseFloat(speedSlider.value)
-        })
+          text: elements.samplePhrase.value,
+          voice: elements.voice.value,
+          speed: Number(elements.speed.value),
+        }),
       });
-      statusMsg.className = 'status success';
-      statusMsg.textContent = 'Playback complete';
-      setTimeout(() => {
-        statusMsg.textContent = '';
-        statusMsg.className = 'status';
-      }, 3000);
-    } catch (err) {
-      statusMsg.className = 'status error';
-      statusMsg.textContent = 'Error playing audio';
+      showActionStatus("Preview complete.");
+    } catch (error) {
+      showActionStatus(error.message, true);
     }
   });
 
-  stopBtn.addEventListener('click', async () => {
+  elements.stop.addEventListener("click", async () => {
     try {
-      await fetch('/api/stop-speech', { method: 'POST' });
-      statusMsg.className = 'status';
-      statusMsg.textContent = 'Speech stopped';
-      setTimeout(() => statusMsg.textContent = '', 3000);
-    } catch (err) {
-      statusMsg.className = 'status error';
-      statusMsg.textContent = 'Error stopping speech';
+      const result = await requestJson("/api/stop-speech", { method: "POST" });
+      showActionStatus(result.stopped ? "Speech stopped." : "Broice is already idle.");
+    } catch (error) {
+      showActionStatus(error.message, true);
     }
   });
 
-  loadSettings();
+  requestJson("/api/state").then(renderState).catch((error) => {
+    showActionStatus(error.message, true);
+  });
+
+  const events = new EventSource("/api/events");
+  events.addEventListener("state", (event) => renderState(JSON.parse(event.data)));
+  events.onerror = () => {
+    if (latestState?.phase !== "error") {
+      elements.statusMessage.textContent = "Reconnecting to Broice...";
+    }
+  };
 </script>
 </body>
 </html>
