@@ -24,7 +24,10 @@ export const RUNTIME_FILES = [
     "speech-response-batcher.mjs",
     "speak.py",
     "copilot-extension.json",
-    "ui/index.html"
+    "ui/index.html",
+    "skills/voice/SKILL.md",
+    "skills/speak/SKILL.md",
+    "skills/stop/SKILL.md"
 ];
 
 function getErrorMessage(error) {
