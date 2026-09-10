@@ -150,7 +150,7 @@ mkdir -p ~/.copilot/extensions/broice
 cp extension.mjs auto-updater.mjs active-session.mjs \
   speech-response-batcher.mjs speak.py config.json \
   copilot-extension.json ~/.copilot/extensions/broice/
-cp -R ui ~/.copilot/extensions/broice/
+cp -R ui skills ~/.copilot/extensions/broice/
 ```
 
 ### Then
@@ -234,10 +234,11 @@ By default, Broice checks Copilot's foreground session before starting playback 
 ```
 broice/
 ├── extension.mjs        Copilot extension: tools, canvas, hooks, HTTP server
+├── active-session.mjs   Foreground session detection
 ├── speech-response-batcher.mjs
 │                        Holds the final reply until the session becomes idle
-├── auto-updater.mjs      Checks and installs continuous release updates
-├── skills/               Desktop slash-palette adapters for voice/speak/stop
+├── auto-updater.mjs     Checks and installs continuous release updates
+├── skills/              Desktop slash-palette adapters for voice/speak/stop
 ├── speak.py             Python worker: ONNX inference + afplay playback
 ├── ui/index.html        Settings panel frontend (HTML/CSS/JS, Primer styled)
 ├── config.json          Persisted settings

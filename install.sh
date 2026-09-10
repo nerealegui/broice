@@ -4,7 +4,7 @@ set -e
 DEST_DIR="$HOME/.copilot/extensions/broice"
 echo "Installing Broice to $DEST_DIR..."
 
-mkdir -p "$DEST_DIR/ui" "$DEST_DIR/skills/voice" "$DEST_DIR/skills/speak" "$DEST_DIR/skills/stop"
+mkdir -p "$DEST_DIR/ui" "$DEST_DIR/skills"
 
 cp extension.mjs "$DEST_DIR/"
 cp auto-updater.mjs "$DEST_DIR/"
@@ -15,10 +15,8 @@ cp copilot-extension.json "$DEST_DIR/"
 if [ ! -f "$DEST_DIR/config.json" ]; then
     cp config.json "$DEST_DIR/"
 fi
+cp -R skills "$DEST_DIR/"
 cp ui/index.html "$DEST_DIR/ui/"
-cp skills/voice/SKILL.md "$DEST_DIR/skills/voice/"
-cp skills/speak/SKILL.md "$DEST_DIR/skills/speak/"
-cp skills/stop/SKILL.md "$DEST_DIR/skills/stop/"
 chmod +x "$DEST_DIR/speak.py"
 
 if [ -f ".broice-version" ]; then
