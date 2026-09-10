@@ -9,7 +9,12 @@ import path from "node:path";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { isForegroundSession } from "./active-session.mjs";
-import { createSpeechResponseBatcher } from "./speech-response-batcher.mjs";
+import {
+    createSpeechResponseBatcher,
+    createVoiceCommands,
+    createVoiceRuntimeState,
+} from "./speech-response-batcher.mjs";
+import { startAutoUpdater } from "./auto-updater.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,6 +30,7 @@ const SCRIPT_PATH = path.join(__dirname, "speak.py");
 const SPEECH_LOCK_FILE = path.join(BIN_DIR, ".speech-active.pid");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const UI_PATH = path.join(__dirname, "ui", "index.html");
+const SKILLS_DIR = path.join(__dirname, "skills");
 const PYTHON_CANDIDATES = ["python3.13", "python3.12", "python3.11", "python3.10", "python3"];
 
 function getErrorMessage(error) {
@@ -40,6 +46,69 @@ const DEFAULT_CONFIG = {
     sample_phrase: "Bro, this is a test of your local neural voice."
 };
 
+const VOICES = new Set([
+    "af_sarah",
+    "af_bella",
+    "af_nicole",
+    "af_sky",
+    "am_adam",
+    "am_michael",
+    "bf_emma",
+    "bf_isabella",
+    "bm_george",
+    "bm_lewis",
+]);
+
+const DESKTOP_SKILLS = {
+    voice: `---
+name: voice
+description: Open the Broice local voice settings dashboard.
+user-invocable: true
+---
+
+# Broice voice dashboard
+
+Immediately call \`open_canvas\` with canvasId \`broice-voice-settings\` and
+instanceId \`broice-settings-panel\`. Do not invoke speech. Keep any confirmation
+brief.
+`,
+    speak: `---
+name: speak
+description: Speak supplied text once with the local Broice Kokoro voice.
+argument-hint: "<text>"
+user-invocable: true
+---
+
+# Speak with Broice
+
+Call the \`speak\` tool exactly once using the full text supplied after
+\`/speak\`. Do not paraphrase or call any other speech tool. If no text was
+provided, respond with \`Usage: /speak <text>\`.
+`,
+    stop: `---
+name: stop
+description: Stop Broice speech immediately.
+user-invocable: true
+---
+
+# Stop Broice
+
+Call the \`stop_speaking\` tool exactly once. Keep any confirmation brief.
+`,
+};
+
+function ensureDesktopSkills() {
+    for (const [name, contents] of Object.entries(DESKTOP_SKILLS)) {
+        const skillDir = path.join(SKILLS_DIR, name);
+        const skillPath = path.join(skillDir, "SKILL.md");
+        if (fs.existsSync(skillPath)) continue;
+        fs.mkdirSync(skillDir, { recursive: true });
+        fs.writeFileSync(skillPath, contents, "utf8");
+    }
+}
+
+ensureDesktopSkills();
+
 function loadConfig() {
     try {
         if (fs.existsSync(CONFIG_PATH)) {
@@ -48,18 +117,57 @@ function loadConfig() {
                 ...JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"))
             };
         }
-    } catch (e) {}
+    } catch (error) {
+        process.stderr.write(`Broice could not read config.json: ${getErrorMessage(error)}\n`);
+    }
     return { ...DEFAULT_CONFIG };
 }
 
 function saveConfig(cfg) {
-    try {
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf8");
-    } catch (e) {}
+    fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(cfg, null, 2)}\n`, "utf8");
 }
 
 let isReady = false;
 let isBootstrapping = false;
+const runtimeState = createVoiceRuntimeState(loadConfig());
+
+function applyConfigPatch(patch) {
+    const next = { ...loadConfig() };
+
+    if (patch.voice !== undefined) {
+        if (!VOICES.has(patch.voice)) throw new Error(`Unknown Broice voice: ${patch.voice}`);
+        next.voice = patch.voice;
+    }
+    if (patch.speed !== undefined) {
+        const speed = Number(patch.speed);
+        if (!Number.isFinite(speed) || speed < 0.7 || speed > 1.5) {
+            throw new Error("Speed must be between 0.7 and 1.5.");
+        }
+        next.speed = speed;
+    }
+    if (patch.lang !== undefined) {
+        if (patch.lang !== "en-us" && patch.lang !== "en-gb") {
+            throw new Error("Language must be en-us or en-gb.");
+        }
+        next.lang = patch.lang;
+    }
+    for (const key of ["auto_read", "active_session_only"]) {
+        if (patch[key] !== undefined) {
+            if (typeof patch[key] !== "boolean") throw new Error(`${key} must be a boolean.`);
+            next[key] = patch[key];
+        }
+    }
+    if (patch.sample_phrase !== undefined) {
+        if (typeof patch.sample_phrase !== "string" || !patch.sample_phrase.trim()) {
+            throw new Error("Sample phrase cannot be empty.");
+        }
+        next.sample_phrase = patch.sample_phrase.trim().slice(0, 1000);
+    }
+
+    saveConfig(next);
+    runtimeState.publish({ config: next });
+    return next;
+}
 
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -141,6 +249,13 @@ async function hasPythonDependencies() {
 async function bootstrap(session) {
     if (isReady || isBootstrapping) return;
     isBootstrapping = true;
+    runtimeState.publish({
+        phase: "setup",
+        message: "Checking the local Kokoro voice runtime...",
+        ready: false,
+        speaking: false,
+        error: null,
+    });
     let ownsBootstrapLock = false;
 
     try {
@@ -153,6 +268,10 @@ async function bootstrap(session) {
         const needsModel = !fs.existsSync(MODEL_PATH) || !fs.existsSync(VOICES_PATH);
 
         if (needsDependencies || needsModel) {
+            runtimeState.publish({
+                phase: "setup",
+                message: "Installing Kokoro dependencies and neural weights...",
+            });
             await session.log("Setting up Broice dependencies and neural weights locally...", { level: "info" });
 
             if (needsVenv) {
@@ -191,6 +310,22 @@ async function bootstrap(session) {
         }
 
         isReady = true;
+        runtimeState.publish({
+            phase: "idle",
+            message: "Local voice runtime is ready.",
+            ready: true,
+            speaking: false,
+            error: null,
+        });
+    } catch (error) {
+        runtimeState.publish({
+            phase: "error",
+            message: "Voice setup failed.",
+            ready: false,
+            speaking: false,
+            error: getErrorMessage(error),
+        });
+        throw error;
     } finally {
         if (ownsBootstrapLock) {
             fs.rmSync(BOOTSTRAP_LOCK_DIR, { recursive: true, force: true });
@@ -299,15 +434,29 @@ function stopCrossProcessSpeech() {
     } catch (e) {}
 }
 
-function stopSpeech() {
+function stopSpeech(statusMessage = "Speech stopped.") {
     stopActiveSessionMonitor();
     stopCrossProcessSpeech();
     if (activeSpeechChild) {
         try {
             expectedSpeechStops.add(activeSpeechChild);
             activeSpeechChild.kill("SIGTERM");
-        } catch (e) {}
+        } catch (error) {
+            runtimeState.publish({
+                phase: "error",
+                message: "Could not stop speech.",
+                speaking: false,
+                error: getErrorMessage(error),
+            });
+            throw error;
+        }
         activeSpeechChild = null;
+        runtimeState.publish({
+            phase: "idle",
+            message: statusMessage,
+            speaking: false,
+            error: null,
+        });
         return true;
     }
     return false;
@@ -354,7 +503,15 @@ async function speakText(
     if (!isReady) {
         throw new Error("Broice speech is not ready. Check the extension log for bootstrap errors.");
     }
-    if (activeSessionOnly && !await isCurrentSessionForeground()) return false;
+    if (activeSessionOnly && !await isCurrentSessionForeground()) {
+        runtimeState.publish({
+            phase: "idle",
+            message: "Speech skipped because this session is not currently shown.",
+            speaking: false,
+            error: null,
+        });
+        return false;
+    }
     stopSpeech();
 
     const config = loadConfig();
@@ -364,6 +521,13 @@ async function speakText(
 
     const cleaned = cleanMarkdownForSpeech(text);
     if (!cleaned) return false;
+
+    runtimeState.publish({
+        phase: "speaking",
+        message: `Speaking with ${voice} at ${Number(speed).toFixed(2)}x.`,
+        speaking: true,
+        error: null,
+    });
 
     return new Promise((resolve, reject) => {
         const child = execFile(PYTHON_PATH, [
@@ -386,9 +550,21 @@ async function speakText(
                 return;
             }
             if (err) {
+                runtimeState.publish({
+                    phase: "error",
+                    message: "Speech playback failed.",
+                    speaking: false,
+                    error: getErrorMessage(err),
+                });
                 reject(err);
                 return;
             }
+            runtimeState.publish({
+                phase: "idle",
+                message: "Playback complete.",
+                speaking: false,
+                error: null,
+            });
             resolve(true);
         });
         activeSpeechChild = child;
@@ -412,52 +588,94 @@ function stopAutoReadAndPlayback() {
     return stopSpeech() || discardedPending;
 }
 
-let serverPort = 49215;
+function writeJson(res, statusCode, body) {
+    res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(body));
+}
+
+function readJson(req) {
+    return new Promise((resolve, reject) => {
+        let body = "";
+        req.on("data", (chunk) => {
+            body += chunk;
+            if (body.length > 32_768) {
+                reject(new Error("Request body is too large."));
+                req.destroy();
+            }
+        });
+        req.on("end", () => {
+            try {
+                resolve(body ? JSON.parse(body) : {});
+            } catch (error) {
+                reject(new Error(`Invalid JSON: ${getErrorMessage(error)}`));
+            }
+        });
+        req.on("error", reject);
+    });
+}
+
+function sendStateEvent(res, state) {
+    res.write(`event: state\ndata: ${JSON.stringify(state)}\n\n`);
+}
+
+let serverPort = null;
 
 const server = http.createServer((req, res) => {
     if (req.method === "GET" && req.url === "/") {
-        res.writeHead(200, { "Content-Type": "text/html" });
+        res.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+        });
         if (fs.existsSync(UI_PATH)) {
             res.end(fs.readFileSync(UI_PATH, "utf8"));
         } else {
             res.end("<h1>Broice settings UI not found</h1>");
         }
+    } else if (req.method === "GET" && req.url === "/api/state") {
+        writeJson(res, 200, runtimeState.getSnapshot());
+    } else if (req.method === "GET" && req.url === "/api/events") {
+        res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        });
+        sendStateEvent(res, runtimeState.getSnapshot());
+        const unsubscribe = runtimeState.subscribe((state) => sendStateEvent(res, state));
+        req.on("close", unsubscribe);
     } else if (req.method === "GET" && req.url === "/api/config") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(loadConfig()));
+        writeJson(res, 200, loadConfig());
     } else if (req.method === "POST" && req.url === "/api/config") {
-        let body = "";
-        req.on("data", chunk => body += chunk);
-        req.on("end", () => {
+        void readJson(req).then((updated) => {
             try {
-                const updated = JSON.parse(body);
-                const current = loadConfig();
-                Object.assign(current, updated);
-                saveConfig(current);
-                res.writeHead(200, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({ success: true }));
-            } catch (e) {
-                res.writeHead(400);
-                res.end(JSON.stringify({ error: e.message }));
+                const config = applyConfigPatch(updated);
+                writeJson(res, 200, { success: true, config });
+            } catch (error) {
+                writeJson(res, 400, { error: getErrorMessage(error) });
             }
+        }).catch((error) => {
+            writeJson(res, 400, { error: getErrorMessage(error) });
         });
     } else if (req.method === "POST" && req.url === "/api/stop-speech") {
         const stopped = stopAutoReadAndPlayback();
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true, stopped }));
+        if (!stopped) {
+            runtimeState.publish({
+                phase: "idle",
+                message: "Broice is already idle.",
+                speaking: false,
+                error: null,
+            });
+        }
+        writeJson(res, 200, { success: true, stopped });
     } else if (req.method === "POST" && req.url === "/api/test-speech") {
-        let body = "";
-        req.on("data", chunk => body += chunk);
-        req.on("end", async () => {
+        void readJson(req).then(async ({ text, voice, speed }) => {
             try {
-                const { text, voice, speed } = JSON.parse(body);
                 await speakText(text || "Hello!", voice, speed);
-                res.writeHead(200, { "Content-Type": "application/json" });
-                res.end(JSON.stringify({ success: true }));
-            } catch (e) {
-                res.writeHead(500);
-                res.end(JSON.stringify({ error: e.message }));
+                writeJson(res, 200, { success: true });
+            } catch (error) {
+                writeJson(res, 500, { error: getErrorMessage(error) });
             }
+        }).catch((error) => {
+            writeJson(res, 400, { error: getErrorMessage(error) });
         });
     } else {
         res.writeHead(404);
@@ -465,25 +683,114 @@ const server = http.createServer((req, res) => {
     }
 });
 
-server.listen(0, "127.0.0.1", () => {
-    serverPort = server.address().port;
+const serverReady = new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+        serverPort = server.address().port;
+        resolve();
+    });
 });
 
 const voiceSettingsCanvas = createCanvas({
     id: "broice-voice-settings",
     displayName: "Voice Settings",
     description: "Visual panel to configure Broice voices, speed, and auto-reading preferences.",
-    open: (ctx) => {
+    actions: [
+        {
+            name: "get_state",
+            description: "Get Broice setup, playback, voice configuration, and registered command state.",
+            handler: async () => {
+                const [{ commands }, { commands: desktopCommands }] = await Promise.all([
+                    session.rpc.commands.list({
+                        includeBuiltins: false,
+                        includeSkills: false,
+                        includeClientCommands: true,
+                    }),
+                    session.rpc.commands.list({
+                        includeBuiltins: false,
+                        includeSkills: true,
+                        includeClientCommands: false,
+                    }),
+                ]);
+                return {
+                    ...runtimeState.getSnapshot(),
+                    registered_commands: commands
+                        .filter(({ name }) => ["voice", "speak", "stop"].includes(name))
+                        .map(({ name, description, kind }) => ({ name, description, kind })),
+                    desktop_commands: desktopCommands
+                        .filter(({ name }) => ["voice", "speak", "stop"].includes(name))
+                        .map(({ name, description, kind }) => ({ name, description, kind })),
+                };
+            },
+        },
+        {
+            name: "update_settings",
+            description: "Update Broice voice, speed, auto-read, active-session, language, or sample phrase settings.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    voice: { type: "string" },
+                    speed: { type: "number", minimum: 0.7, maximum: 1.5 },
+                    lang: { type: "string", enum: ["en-us", "en-gb"] },
+                    auto_read: { type: "boolean" },
+                    active_session_only: { type: "boolean" },
+                    sample_phrase: { type: "string", minLength: 1, maxLength: 1000 },
+                },
+                additionalProperties: false,
+            },
+            handler: ({ input }) => ({ config: applyConfigPatch(input) }),
+        },
+        {
+            name: "preview",
+            description: "Preview text with the selected Broice voice and speed.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    text: { type: "string", minLength: 1 },
+                    voice: { type: "string", enum: [...VOICES] },
+                    speed: { type: "number", minimum: 0.7, maximum: 1.5 },
+                },
+                required: ["text"],
+                additionalProperties: false,
+            },
+            handler: async ({ input }) => ({
+                spoken: await speakText(input.text, input.voice, input.speed),
+            }),
+        },
+        {
+            name: "stop",
+            description: "Stop current Broice speech and suppress pending auto-read.",
+            handler: () => ({ stopped: stopAutoReadAndPlayback() }),
+        },
+    ],
+    open: async () => {
+        await serverReady;
         return {
             url: `http://127.0.0.1:${serverPort}`,
             title: "Broice Voice Settings",
-            status: "ready"
+            status: runtimeState.getSnapshot().phase,
         };
     }
 });
 
-const session = await joinSession({
+let session;
+session = await joinSession({
     canvases: [voiceSettingsCanvas],
+    skillDirectories: [SKILLS_DIR],
+    enableSkills: true,
+    commands: createVoiceCommands({
+        openVoiceSettings: () => session.rpc.canvas.open({
+            canvasId: "broice-voice-settings",
+            instanceId: "broice-settings-panel",
+        }),
+        speak: async (text) => {
+            const cfg = loadConfig();
+            await speakText(text, null, null, null, cfg.active_session_only);
+        },
+        stop: stopSpeech,
+        suppressAutoRead: () => finalResponseBatcher.suppressInteraction(),
+        log: (message, options) => session.log(message, options),
+    }),
     tools: [
         {
             name: "speak",
@@ -500,6 +807,7 @@ const session = await joinSession({
             },
             skipPermission: true,
             handler: async (args) => {
+                finalResponseBatcher.suppressInteraction();
                 const cfg = loadConfig();
                 const spoken = await speakText(
                     args.text,
@@ -541,13 +849,7 @@ const session = await joinSession({
             },
             skipPermission: true,
             handler: async (args) => {
-                const cfg = loadConfig();
-                if (args.voice !== undefined) cfg.voice = args.voice;
-                if (args.speed !== undefined) cfg.speed = args.speed;
-                if (args.lang !== undefined) cfg.lang = args.lang;
-                if (args.auto_read !== undefined) cfg.auto_read = args.auto_read;
-                if (args.active_session_only !== undefined) cfg.active_session_only = args.active_session_only;
-                saveConfig(cfg);
+                const cfg = applyConfigPatch(args);
                 await session.log(`Voice updated: Voice=${cfg.voice}, Speed=${cfg.speed}, Auto-Read=${cfg.auto_read}, Active-Session-Only=${cfg.active_session_only}`);
                 return `Voice configuration updated:\n${JSON.stringify(cfg, null, 2)}`;
             },
@@ -561,13 +863,13 @@ const session = await joinSession({
             stopSpeech();
             finalResponseBatcher.beginInteraction();
             const text = input.prompt.trim().toLowerCase();
-            if (text === "/stop" || text === "/quiet" || text === "/silence" || text === "/shh" || text === "/cancel") {
+            if (text === "/quiet" || text === "/silence" || text === "/shh" || text === "/cancel") {
                 finalResponseBatcher.suppressInteraction();
                 return {
                     additionalContext: "The user commanded to stop voice playback. Confirm briefly that audio has been stopped."
                 };
             }
-            if (text === "/voice" || text === "/tts" || text === "/voices" || text === "voice settings" || text === "voice canvas") {
+            if (text === "/tts" || text === "/voices" || text === "voice settings" || text === "voice canvas") {
                 return {
                     additionalContext: "The user triggered the voice settings shortcut. Immediately invoke open_canvas with canvasId: 'broice-voice-settings', instanceId: 'broice-settings-panel' and confirm to the user."
                 };
@@ -576,8 +878,10 @@ const session = await joinSession({
     },
 });
 
+startAutoUpdater();
+
 void bootstrap(session).catch((error) => {
-    console.error(`Broice bootstrap failed: ${getErrorMessage(error)}`);
+    process.stderr.write(`Broice bootstrap failed: ${getErrorMessage(error)}\n`);
 });
 
 session.on("assistant.message", async (event) => {
@@ -588,7 +892,7 @@ session.on("session.idle", async (event) => {
     try {
         await finalResponseBatcher.finishInteraction(event);
     } catch (error) {
-        console.error(`Broice speech playback failed: ${getErrorMessage(error)}`);
+        process.stderr.write(`Broice speech playback failed: ${getErrorMessage(error)}\n`);
     }
 });
 

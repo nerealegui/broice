@@ -12,7 +12,11 @@ Broice runs the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) ONNX model
 >
 > `Install Broice from https://github.com/nerealegui/broice/tree/main`
 
-Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions. Because this repository is currently private, you must have access to it before installing.
+Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions.
+
+Broice checks its public continuous GitHub Release hourly. Updates download silently,
+are checksum-verified, and preserve your settings and downloaded model files. Updated
+code becomes active the next time Copilot reloads extensions or restarts.
 
 <p align="center">
   <img src="docs/settings-panel.png" alt="Broice voice settings panel inside GitHub Copilot" width="480">
@@ -26,7 +30,7 @@ Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions
 |---|---|
 | **Fully local** | Neural inference runs on your Mac's CPU / Neural Engine via ONNX Runtime. Nothing is sent anywhere. |
 | **Auto-read responses** | Speaks each final Copilot reply once the full tool-use loop finishes, but only from the session currently shown. |
-| **Settings Canvas** | A native-feeling side panel (GitHub Primer styled) to pick a voice, tune speed, and test audio. |
+| **Live voice settings** | A theme-aware side panel to configure speech and watch setup, speaking, idle, and error state update live. |
 | **Multi-session safe** | Serializes shared environment setup so simultaneous extension processes cannot corrupt the voice runtime. |
 | **Mid-speech stop** | Cancel playback instantly via button, slash command, or natural language. |
 | **Smart speech rules** | Skips emojis, and reads `install.sh` as "install dot sh" instead of two separate words. |
@@ -102,17 +106,18 @@ speak.py  ──►  Kokoro ONNX  ──►  WAV  ──►  afplay  ──►  
 You type /voice
      │
      ▼
-onUserPromptSubmitted hook  ──►  open_canvas("broice-voice-settings")
+registered command handler  ──►  session.rpc.canvas.open("broice-voice-settings")
      │
      ▼
 Copilot side panel loads  http://127.0.0.1:<port>
      │                          │
-     │                          ├─ GET  /api/config       read settings
-     │                          ├─ POST /api/config       save to config.json
+     │                          ├─ GET  /api/state        settings + runtime state
+     │                          ├─ GET  /api/events       live server-sent events
+     │                          ├─ POST /api/config       validate and save settings
      │                          ├─ POST /api/test-speech  preview a voice
      │                          └─ POST /api/stop-speech  cancel playback
      ▼
-ui/index.html  (GitHub Primer styled, light mode)
+ui/index.html  (host theme tokens, light and dark modes)
 ```
 
 ---
@@ -142,7 +147,10 @@ The script copies the extension into `~/.copilot/extensions/broice/`.
 
 ```bash
 mkdir -p ~/.copilot/extensions/broice
-cp -r extension.mjs speak.py config.json ui ~/.copilot/extensions/broice/
+cp extension.mjs auto-updater.mjs active-session.mjs \
+  speech-response-batcher.mjs speak.py config.json \
+  copilot-extension.json ~/.copilot/extensions/broice/
+cp -R ui ~/.copilot/extensions/broice/
 ```
 
 ### Then
@@ -160,13 +168,27 @@ cp -r extension.mjs speak.py config.json ui ~/.copilot/extensions/broice/
 
 ### Open the settings panel
 
-Type any of these in Copilot chat:
+Broice registers commands with Copilot, including descriptions in slash-command
+autocomplete:
 
-```
-/voice     /tts     /voices     voice settings
-```
+| Command | Behavior |
+|---|---|
+| `/voice` | Opens or focuses the live voice settings panel directly. |
+| `/speak <text>` | Speaks the supplied text once without generating an assistant reply or duplicate auto-read. |
+| `/stop` | Stops playback and suppresses any pending auto-read. |
 
-From the panel you can pick a voice, adjust speed from 0.7x to 1.5x, toggle automatic reading, restrict speech to the session currently shown, edit and save your sample phrase, preview with **Test**, and cancel with **Stop**.
+Copilot's terminal TUI runs these as native SDK client commands. The desktop app
+currently filters client commands from its composer, so Broice also installs
+user-invocable skill adapters with the same names. This keeps all three entries
+discoverable in desktop slash autocomplete while preserving direct command
+execution in the terminal.
+
+The conversational shortcuts `/tts`, `/voices`, `voice settings`, `/quiet`,
+`/silence`, `/shh`, and `/cancel` remain available. From the settings panel you can
+pick a voice, adjust speed from 0.7x to 1.5x, toggle automatic reading, restrict
+speech to the session currently shown, edit and save your sample phrase, preview
+audio, and cancel playback. Its setup, speaking, idle, and error state updates
+without refreshing.
 
 By default, Broice checks Copilot's foreground session before starting playback and while audio is playing. When the host exposes foreground-session information, replies from background sessions are skipped and switching away from a speaking session stops its audio. Hosts that do not expose this information continue playing audio rather than suppressing every response.
 
@@ -174,7 +196,7 @@ By default, Broice checks Copilot's foreground session before starting playback 
 
 | Method | How |
 |---|---|
-| Slash command | `/stop` · `/quiet` · `/silence` · `/shh` · `/cancel` |
+| Slash command | `/stop` (registered) · `/quiet` · `/silence` · `/shh` · `/cancel` |
 | Panel | Click **Stop** |
 | Natural language | "Stop speaking", "Be quiet" |
 | Automatic | Sending any new message interrupts the previous speech |
@@ -214,6 +236,8 @@ broice/
 ├── extension.mjs        Copilot extension: tools, canvas, hooks, HTTP server
 ├── speech-response-batcher.mjs
 │                        Holds the final reply until the session becomes idle
+├── auto-updater.mjs      Checks and installs continuous release updates
+├── skills/               Desktop slash-palette adapters for voice/speak/stop
 ├── speak.py             Python worker: ONNX inference + afplay playback
 ├── ui/index.html        Settings panel frontend (HTML/CSS/JS, Primer styled)
 ├── config.json          Persisted settings
@@ -232,10 +256,25 @@ The entire frontend lives in a single self-contained file: `ui/index.html`. Edit
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/config` | `GET` | Read `{ voice, speed, lang, auto_read, sample_phrase }` |
-| `/api/config` | `POST` | Persist settings to `config.json` |
+| `/api/state` | `GET` | Read settings plus live setup/playback status |
+| `/api/events` | `GET` | Subscribe to status and configuration updates with SSE |
+| `/api/config` | `GET` | Read `{ voice, speed, lang, auto_read, active_session_only, sample_phrase }` |
+| `/api/config` | `POST` | Validate and persist settings to `config.json` |
 | `/api/test-speech` | `POST` | Synthesize and play `{ text, voice, speed }` |
 | `/api/stop-speech` | `POST` | Cancel active playback |
+
+---
+
+## Canvas actions
+
+The `broice-voice-settings` canvas exposes agent-callable actions:
+
+| Action | Purpose |
+|---|---|
+| `get_state` | Read current setup, playback, and configuration state |
+| `update_settings` | Validate and update voice settings |
+| `preview` | Speak preview text with optional voice and speed overrides |
+| `stop` | Stop playback and suppress pending auto-read |
 
 ---
 
@@ -251,7 +290,10 @@ The entire frontend lives in a single self-contained file: `ui/index.html`. Edit
 
 ## Privacy
 
-Broice makes exactly two network requests, both on first install, both to GitHub Releases, to download the model weights. After that it is fully offline. Your prompts, Copilot's responses, and all generated audio stay on your machine.
+Broice downloads its model and voice data from GitHub Releases during first-time setup. It
+also checks the public Broice release manifest hourly and downloads an update package only
+when `main` has changed. Your prompts, Copilot responses, settings, model data, and generated
+audio stay on your machine.
 
 ---
 

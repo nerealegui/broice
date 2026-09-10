@@ -50,3 +50,89 @@ export function createSpeechResponseBatcher({ speak, shouldAutoRead }) {
         },
     };
 }
+
+export function createVoiceRuntimeState(initialConfig) {
+    let snapshot = {
+        phase: "setup",
+        message: "Preparing local voice runtime...",
+        ready: false,
+        speaking: false,
+        error: null,
+        config: { ...initialConfig },
+        updated_at: new Date().toISOString(),
+    };
+    const listeners = new Set();
+
+    function publish(patch) {
+        snapshot = {
+            ...snapshot,
+            ...patch,
+            config: patch.config ? { ...patch.config } : snapshot.config,
+            updated_at: new Date().toISOString(),
+        };
+        for (const listener of listeners) {
+            listener({
+                ...snapshot,
+                config: { ...snapshot.config },
+            });
+        }
+        return snapshot;
+    }
+
+    return {
+        getSnapshot() {
+            return {
+                ...snapshot,
+                config: { ...snapshot.config },
+            };
+        },
+        publish,
+        subscribe(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        },
+    };
+}
+
+export function createVoiceCommands({
+    openVoiceSettings,
+    speak,
+    stop,
+    suppressAutoRead,
+    log,
+}) {
+    return [
+        {
+            name: "voice",
+            description: "Open the Broice voice settings dashboard.",
+            handler: async () => {
+                suppressAutoRead();
+                await openVoiceSettings();
+            },
+        },
+        {
+            name: "speak",
+            description: "Speak the text after the command with Broice.",
+            handler: async ({ args }) => {
+                suppressAutoRead();
+                const text = args.trim();
+                if (!text) {
+                    await log("Usage: /speak <text>", { level: "warning" });
+                    return;
+                }
+                await speak(text);
+            },
+        },
+        {
+            name: "stop",
+            description: "Stop Broice speech immediately.",
+            handler: async () => {
+                suppressAutoRead();
+                const stopped = stop();
+                await log(stopped ? "Broice speech stopped." : "Broice is already idle.", {
+                    ephemeral: true,
+                });
+            },
+        },
+    ];
+}
