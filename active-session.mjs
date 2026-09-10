@@ -6,9 +6,12 @@ function normalizeWorkspacePath(workspacePath) {
 }
 
 export function isForegroundSession(foreground, currentSession) {
-    if (!foreground?.sessionId) return true;
+    if (!foreground || typeof foreground !== "object") return true;
+    if (!foreground.sessionId && !foreground.workspacePath) return true;
     if (!currentSession) return false;
-    if (foreground.sessionId === currentSession.sessionId) return true;
+    if (foreground.sessionId && currentSession.sessionId && foreground.sessionId === currentSession.sessionId) {
+        return true;
+    }
 
     const foregroundWorkspace = normalizeWorkspacePath(foreground.workspacePath);
     const currentWorkspace = normalizeWorkspacePath(currentSession.workspacePath);

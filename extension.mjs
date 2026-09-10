@@ -27,6 +27,7 @@ const PYTHON_PATH = path.join(VENV_DIR, "bin", "python");
 const MODEL_PATH = path.join(BIN_DIR, "kokoro-v1.0.onnx");
 const VOICES_PATH = path.join(BIN_DIR, "voices-v1.0.bin");
 const SCRIPT_PATH = path.join(__dirname, "speak.py");
+const SPEECH_LOCK_FILE = path.join(BIN_DIR, ".speech-active.pid");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const UI_PATH = path.join(__dirname, "ui", "index.html");
 const SKILLS_DIR = path.join(__dirname, "skills");
@@ -387,8 +388,55 @@ function stopActiveSessionMonitor() {
     activeSessionCheckInFlight = false;
 }
 
+function claimCrossProcessSpeechLock(childPid) {
+    try {
+        if (fs.existsSync(SPEECH_LOCK_FILE)) {
+            const raw = fs.readFileSync(SPEECH_LOCK_FILE, "utf8").trim();
+            const prevPid = Number.parseInt(raw, 10);
+            if (Number.isInteger(prevPid) && prevPid > 0 && prevPid !== childPid) {
+                try {
+                    process.kill(prevPid, 0);
+                    process.kill(prevPid, "SIGTERM");
+                } catch (e) {}
+            }
+        }
+        fs.writeFileSync(SPEECH_LOCK_FILE, `${childPid}\n`, "utf8");
+    } catch (e) {}
+}
+
+function releaseCrossProcessSpeechLock(childPid) {
+    try {
+        if (fs.existsSync(SPEECH_LOCK_FILE)) {
+            const raw = fs.readFileSync(SPEECH_LOCK_FILE, "utf8").trim();
+            const prevPid = Number.parseInt(raw, 10);
+            if (prevPid === childPid) {
+                fs.unlinkSync(SPEECH_LOCK_FILE);
+            }
+        }
+    } catch (e) {}
+}
+
+function stopCrossProcessSpeech() {
+    try {
+        if (fs.existsSync(SPEECH_LOCK_FILE)) {
+            const raw = fs.readFileSync(SPEECH_LOCK_FILE, "utf8").trim();
+            const prevPid = Number.parseInt(raw, 10);
+            if (Number.isInteger(prevPid) && prevPid > 0) {
+                try {
+                    process.kill(prevPid, 0);
+                    process.kill(prevPid, "SIGTERM");
+                } catch (e) {}
+            }
+            try {
+                fs.unlinkSync(SPEECH_LOCK_FILE);
+            } catch (e) {}
+        }
+    } catch (e) {}
+}
+
 function stopSpeech(statusMessage = "Speech stopped.") {
     stopActiveSessionMonitor();
+    stopCrossProcessSpeech();
     if (activeSpeechChild) {
         try {
             expectedSpeechStops.add(activeSpeechChild);
@@ -490,6 +538,9 @@ async function speakText(
             "--lang", lang,
             "--model-dir", BIN_DIR
         ], (err) => {
+            if (child.pid) {
+                releaseCrossProcessSpeechLock(child.pid);
+            }
             if (activeSpeechChild === child) {
                 activeSpeechChild = null;
                 stopActiveSessionMonitor();
@@ -517,6 +568,9 @@ async function speakText(
             resolve(true);
         });
         activeSpeechChild = child;
+        if (child.pid) {
+            claimCrossProcessSpeechLock(child.pid);
+        }
         if (activeSessionOnly) monitorActiveSession();
     });
 }
