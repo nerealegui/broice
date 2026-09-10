@@ -19,7 +19,7 @@ are checksum-verified, and preserve your settings and downloaded model files. Up
 code becomes active the next time Copilot reloads extensions or restarts.
 
 <p align="center">
-  <img src="docs/settings-panel.png" alt="Broice voice settings panel inside GitHub Copilot" width="480">
+  <img src="docs/settings-panel.png" alt="Broice settings panel inside GitHub Copilot" width="480">
 </p>
 
 ---
@@ -30,12 +30,12 @@ code becomes active the next time Copilot reloads extensions or restarts.
 |---|---|
 | **Fully local** | Neural inference runs on your Mac's CPU / Neural Engine via ONNX Runtime. Nothing is sent anywhere. |
 | **Auto-read responses** | Speaks each final Copilot reply once the full tool-use loop finishes, but only from the session currently shown. |
-| **Live voice settings** | A theme-aware side panel to configure speech and watch setup, speaking, idle, and error state update live. |
+| **Live Broice settings** | A theme-aware side panel to configure speech and watch setup, speaking, idle, and error state update live. |
 | **Multi-session safe** | Serializes shared environment setup so simultaneous extension processes cannot corrupt the voice runtime. |
 | **Mid-speech stop** | Cancel playback instantly via button, slash command, or natural language. |
 | **Smart speech rules** | Skips emojis, and reads `install.sh` as "install dot sh" instead of two separate words. |
 | **Self-bootstrapping** | On first run it creates its own Python venv and downloads model weights automatically. |
-| **10 voices** | American and British, male and female. |
+| **10 voices** | American and British, male and female voices across natural, articulate, dynamic, and professional styles. |
 
 ---
 
@@ -214,7 +214,7 @@ By default, Broice checks Copilot's foreground session before starting playback 
 
 ## Voices
 
-| Voice ID | Accent | Character |
+| Voice ID | Accent & Gender | Character / Style |
 |---|---|---|
 | `af_sarah` | American Female | Warm, natural (default) |
 | `af_bella` | American Female | Soft, clear |
