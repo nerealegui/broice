@@ -40,4 +40,11 @@ test("allows speech when the host cannot report a foreground session", () => {
         ),
         true
     );
+    assert.equal(
+        isForegroundSession(
+            null,
+            { sessionId: "session-1" }
+        ),
+        true
+    );
 });
