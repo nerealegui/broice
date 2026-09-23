@@ -27,7 +27,7 @@
 
   .dashboard {
     min-height: 100vh;
-    padding: 20px;
+    padding: 14px;
   }
 
   .eyebrow {
@@ -42,19 +42,35 @@
   h1 {
     margin: 0;
     font-family: var(--font-sans-display, var(--font-sans, sans-serif));
-    font-size: var(--text-title-large, 26px);
+    font-size: var(--text-title-large, 22px);
     font-weight: var(--font-weight-semibold, 600);
     line-height: var(--leading-title-large, 32px);
   }
 
   .subtitle {
-    margin: 6px 0 18px;
+    margin: 2px 0 12px;
     color: var(--text-color-muted, #656d76);
   }
 
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-logo {
+    width: 42px;
+    height: 42px;
+    flex: 0 0 auto;
+    border-radius: 10px;
+    object-fit: cover;
+    background: var(--background-color-default, #ffffff);
+    border: 1px solid var(--border-color-default, #d0d7de);
+  }
+
   .card {
-    margin-top: 12px;
-    padding: 16px;
+    margin-top: 8px;
+    padding: 12px;
     border: 1px solid var(--border-color-default, #d0d7de);
     border-radius: 12px;
     background: color-mix(in srgb, var(--background-color-default, #ffffff) 94%, var(--text-color-muted, #656d76));
@@ -63,8 +79,62 @@
   .status-card {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 12px;
+    gap: 10px;
     align-items: start;
+  }
+
+  .status-orb {
+    position: relative;
+    width: 26px;
+    height: 26px;
+    margin-top: 2px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle, #ffffff 0 7%, color-mix(in srgb, var(--true-color-blue, #0969da) 88%, #ffffff) 17%, var(--true-color-blue, #0969da) 43%, transparent 72%);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--true-color-blue, #0969da) 32%, transparent);
+    opacity: calc(0.36 + (var(--audio-level, 0) * 0.64));
+    transform: scale(calc(0.72 + (var(--audio-level, 0) * 0.48)));
+    transition:
+      box-shadow 520ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 520ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .status-orb::after {
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--true-color-blue, #0969da) 34%, transparent);
+    content: "";
+    opacity: 0;
+    transform: scale(0.72);
+  }
+
+  .status-orb[data-phase="setup"],
+  .status-orb[data-phase="speaking"] {
+    transform: scale(calc(0.72 + (var(--audio-level, 0) * 0.48)));
+  }
+
+  .status-orb[data-phase="setup"] {
+    animation: light-breathe 1.6s ease-in-out infinite;
+  }
+
+  .status-orb[data-phase="speaking"] {
+    animation: none;
+    box-shadow: 0 0 calc(5px + (var(--audio-level, 0) * 20px))
+      color-mix(in srgb, var(--true-color-blue, #0969da) calc(32% + (var(--audio-level, 0) * 38%)), transparent);
+  }
+
+  .status-orb[data-phase="speaking"]::after {
+    animation: light-ripple 1.1s ease-out infinite;
+  }
+
+  .status-orb[data-phase="error"] {
+    background:
+      radial-gradient(circle, #ffffff 0 7%, color-mix(in srgb, var(--true-color-red, #cf222e) 88%, #ffffff) 17%, var(--true-color-red, #cf222e) 43%, transparent 72%);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--true-color-red, #cf222e) 38%, transparent);
+    opacity: 1;
+    transform: scale(1);
   }
 
   .status-dot {
@@ -93,6 +163,18 @@
 
   @keyframes pulse {
     50% { transform: scale(0.72); opacity: 0.55; }
+  }
+
+  @keyframes light-breathe {
+    50% {
+      box-shadow: 0 0 14px color-mix(in srgb, var(--true-color-blue, #0969da) 42%, transparent);
+      transform: scale(1.05);
+    }
+  }
+
+  @keyframes light-ripple {
+    0% { opacity: 0.64; transform: scale(0.72); }
+    100% { opacity: 0; transform: scale(1.55); }
   }
 
   .status-heading {
@@ -127,11 +209,11 @@
   .summary-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
   }
 
   .summary-item {
-    padding: 12px;
+    padding: 9px;
     border: 1px solid var(--border-color-default, #d0d7de);
     border-radius: 8px;
   }
@@ -153,13 +235,13 @@
   }
 
   .section-heading {
-    margin: 0 0 14px;
-    font-size: var(--text-title-medium, 18px);
+    margin: 0 0 10px;
+    font-size: var(--text-title-medium, 16px);
     font-weight: var(--font-weight-semibold, 600);
   }
 
   .field {
-    margin-top: 14px;
+    margin-top: 10px;
   }
 
   .field:first-of-type {
@@ -171,7 +253,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
 
   label {
@@ -180,8 +262,8 @@
 
   select, input[type="text"] {
     width: 100%;
-    min-height: 36px;
-    padding: 7px 10px;
+    min-height: 32px;
+    padding: 5px 8px;
     color: var(--text-color-default, #1f2328);
     background: var(--background-color-default, #ffffff);
     border: 1px solid var(--border-color-default, #d0d7de);
@@ -201,9 +283,9 @@
   .toggle-row {
     display: grid;
     grid-template-columns: 1fr auto;
-    gap: 16px;
+    gap: 12px;
     align-items: center;
-    padding: 12px 0;
+    padding: 9px 0;
     border-top: 1px solid var(--border-color-default, #d0d7de);
   }
 
@@ -232,12 +314,12 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-    margin-top: 16px;
+    margin-top: 10px;
   }
 
   button {
-    min-height: 36px;
-    padding: 7px 12px;
+    min-height: 32px;
+    padding: 5px 10px;
     color: var(--text-color-default, #1f2328);
     background: var(--background-color-default, #ffffff);
     border: 1px solid var(--border-color-default, #d0d7de);
@@ -267,7 +349,7 @@
 
   .save-status {
     min-height: 20px;
-    margin: 10px 0 0;
+    margin: 7px 0 0;
     color: var(--text-color-muted, #656d76);
     font-size: var(--text-body-small, 12px);
     text-align: right;
@@ -283,23 +365,28 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .status-dot { animation: none !important; }
+    .status-dot, .status-orb { animation: none !important; }
   }
 </style>
 </head>
 <body>
 <main class="dashboard">
-  <h1>Broice settings</h1>
-  <p class="subtitle">Tune how Copilot sounds. Audio and inference stay on this Mac.</p>
+  <div class="brand">
+    <img class="brand-logo" src="broice-logo.png" alt="Broice mascot">
+    <div>
+      <h1>Broice settings</h1>
+      <p class="subtitle">Get Copilot sounding like your bro. Everything stays local on this Mac.</p>
+    </div>
+  </div>
 
   <section class="card status-card" aria-live="polite">
-    <span class="status-dot" id="status-dot" data-phase="setup"></span>
+    <span class="status-orb" id="status-orb" data-phase="setup" role="img" aria-label="Bro voice status"></span>
     <div>
       <div class="status-heading">
-        <strong id="status-phase">Setup</strong>
+        <strong id="status-phase">Bro is warming up</strong>
         <span class="status-time" id="status-time">Connecting...</span>
       </div>
-      <p class="status-message" id="status-message">Connecting to Broice...</p>
+      <p class="status-message" id="status-message">Getting the voice ready, bro...</p>
       <p class="status-error" id="status-error" hidden></p>
     </div>
   </section>
@@ -312,6 +399,18 @@
     <div class="summary-item">
       <span class="summary-label">Current speed</span>
       <span class="summary-value" id="current-speed">--</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="section-heading">Voice engine</h2>
+    <div class="field">
+      <label for="engine">Engine</label>
+      <select id="engine">
+        <option value="kokoro">Kokoro (recommended)</option>
+        <option value="vibevoice">VibeVoice Realtime 0.5B (experimental)</option>
+      </select>
+      <span class="field-note">VibeVoice is the experimental big-brain option and may be slower on this Mac.</span>
     </div>
   </section>
 
@@ -338,6 +437,14 @@
           <option value="bm_george">George - classic British</option>
           <option value="bm_lewis">Lewis - casual British</option>
         </optgroup>
+        <optgroup label="VibeVoice experimental">
+          <option value="en-Carter_man">Carter - male</option>
+          <option value="en-Davis_man">Davis - male</option>
+          <option value="en-Emma_woman">Emma - female</option>
+          <option value="en-Frank_man">Frank - male</option>
+          <option value="en-Grace_woman">Grace - female</option>
+          <option value="en-Mike_man">Mike - male</option>
+        </optgroup>
       </select>
     </div>
 
@@ -351,7 +458,7 @@
   </section>
 
   <section class="card">
-    <h2 class="section-heading">Reading behavior</h2>
+    <h2 class="section-heading">How bro reads</h2>
     <div class="toggle-row">
       <div class="toggle-copy">
         <label for="auto-read">Auto-read replies</label>
@@ -375,9 +482,9 @@
       <input type="text" id="sample-phrase" maxlength="1000">
     </div>
     <div class="actions">
-      <button type="button" id="preview">Preview</button>
-      <button type="button" class="danger" id="stop">Stop</button>
-      <button type="button" class="primary" id="save">Save</button>
+      <button type="button" id="preview">Try it</button>
+      <button type="button" class="danger" id="stop">Stop bro</button>
+      <button type="button" class="primary" id="save">Save it</button>
     </div>
     <p class="save-status" id="save-status" aria-live="polite"></p>
   </section>
@@ -385,13 +492,14 @@
 
 <script>
   const elements = {
-    statusDot: document.getElementById("status-dot"),
+    statusOrb: document.getElementById("status-orb"),
     statusPhase: document.getElementById("status-phase"),
     statusTime: document.getElementById("status-time"),
     statusMessage: document.getElementById("status-message"),
     statusError: document.getElementById("status-error"),
     currentVoice: document.getElementById("current-voice"),
     currentSpeed: document.getElementById("current-speed"),
+    engine: document.getElementById("engine"),
     voice: document.getElementById("voice"),
     speed: document.getElementById("speed"),
     speedValue: document.getElementById("speed-value"),
@@ -417,21 +525,41 @@
   }
 
   function hydrateForm(config) {
+    elements.engine.value = config.engine || "kokoro";
     elements.voice.value = config.voice;
     elements.speed.value = config.speed;
     elements.speedValue.textContent = `${Number(config.speed).toFixed(2)}x`;
     elements.autoRead.checked = config.auto_read;
     elements.activeSessionOnly.checked = config.active_session_only;
     elements.samplePhrase.value = config.sample_phrase;
+    syncVoiceOptions();
     hydrated = true;
+  }
+
+  function syncVoiceOptions() {
+    const vibevoice = elements.engine.value === "vibevoice";
+    for (const option of elements.voice.options) {
+      option.hidden = vibevoice !== option.value.startsWith("en-");
+    }
   }
 
   function renderState(state) {
     latestState = state;
     const config = state.config || {};
-    elements.statusDot.dataset.phase = state.phase;
-    elements.statusPhase.textContent = state.phase;
-    elements.statusMessage.textContent = state.message;
+    const phaseLabels = {
+      setup: "Bro is warming up",
+      speaking: "Bro is talking",
+      idle: "Bro is ready",
+      error: "Bro hit a snag",
+    };
+    elements.statusOrb.dataset.phase = state.phase;
+    elements.statusOrb.style.setProperty("--audio-level", String(state.audioLevel || 0));
+    elements.statusPhase.textContent = phaseLabels[state.phase] || "Bro is here";
+    elements.statusMessage.textContent = state.phase === "idle"
+      ? "Ready when you are."
+      : state.phase === "error"
+        ? "That one did not land. Check the details below."
+        : state.message;
     elements.statusTime.textContent = new Date(state.updated_at).toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
@@ -450,6 +578,7 @@
 
   function formConfig() {
     return {
+      engine: elements.engine.value,
       voice: elements.voice.value,
       speed: Number(elements.speed.value),
       auto_read: elements.autoRead.checked,
@@ -468,6 +597,13 @@
     elements.speedValue.textContent = `${Number(elements.speed.value).toFixed(2)}x`;
   });
 
+  elements.engine.addEventListener("change", () => {
+    formDirty = true;
+    syncVoiceOptions();
+    const firstVisible = [...elements.voice.options].find((option) => !option.hidden);
+    if (firstVisible) elements.voice.value = firstVisible.value;
+  });
+
   for (const control of [
     elements.voice,
     elements.autoRead,
@@ -480,7 +616,7 @@
   }
 
   elements.save.addEventListener("click", async () => {
-    showActionStatus("Saving...");
+    showActionStatus("Saving it...");
     try {
       const result = await requestJson("/api/config", {
         method: "POST",
@@ -489,14 +625,14 @@
       });
       formDirty = false;
       hydrateForm(result.config);
-      showActionStatus("Settings saved.");
+      showActionStatus("Locked in.");
     } catch (error) {
       showActionStatus(error.message, true);
     }
   });
 
   elements.preview.addEventListener("click", async () => {
-    showActionStatus("Starting preview...");
+    showActionStatus("Bro is getting ready...");
     try {
       await requestJson("/api/test-speech", {
         method: "POST",
@@ -507,7 +643,7 @@
           speed: Number(elements.speed.value),
         }),
       });
-      showActionStatus("Preview complete.");
+      showActionStatus("That hit.");
     } catch (error) {
       showActionStatus(error.message, true);
     }
@@ -516,7 +652,7 @@
   elements.stop.addEventListener("click", async () => {
     try {
       const result = await requestJson("/api/stop-speech", { method: "POST" });
-      showActionStatus(result.stopped ? "Speech stopped." : "Broice is already idle.");
+      showActionStatus(result.stopped ? "Bro stopped." : "Bro is already chilling.");
     } catch (error) {
       showActionStatus(error.message, true);
     }

@@ -1,12 +1,13 @@
 // Extension: broice
-// Local neural TTS extension for GitHub Copilot CLI, powered by Kokoro
+// Local neural TTS extension for GitHub Copilot CLI, powered by Kokoro or VibeVoice
 
 import { joinSession, createCanvas } from "@github/copilot-sdk/extension";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { isForegroundSession } from "./active-session.mjs";
 import {
@@ -27,9 +28,12 @@ const PYTHON_PATH = path.join(VENV_DIR, "bin", "python");
 const MODEL_PATH = path.join(BIN_DIR, "kokoro-v1.0.onnx");
 const VOICES_PATH = path.join(BIN_DIR, "voices-v1.0.bin");
 const SCRIPT_PATH = path.join(__dirname, "speak.py");
+const VIBEVOICE_WORKER_SCRIPT = path.join(__dirname, "speak_vibevoice_server.py");
+const VIBEVOICE_IDLE_SHUTDOWN_MS = 10 * 60 * 1000;
 const SPEECH_LOCK_FILE = path.join(BIN_DIR, ".speech-active.pid");
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const UI_PATH = path.join(__dirname, "ui", "index.html");
+const UI_LOGO_PATH = path.join(__dirname, "ui", "broice-logo.png");
 const SKILLS_DIR = path.join(__dirname, "skills");
 const PYTHON_CANDIDATES = ["python3.13", "python3.12", "python3.11", "python3.10", "python3"];
 
@@ -38,6 +42,7 @@ function getErrorMessage(error) {
 }
 
 const DEFAULT_CONFIG = {
+    engine: "kokoro",
     voice: "af_sarah",
     speed: 1.0,
     lang: "en-us",
@@ -58,6 +63,14 @@ const VOICES = new Set([
     "bm_george",
     "bm_lewis",
 ]);
+const VIBEVOICE_VOICES = new Set([
+    "en-Carter_man",
+    "en-Davis_man",
+    "en-Emma_woman",
+    "en-Frank_man",
+    "en-Grace_woman",
+    "en-Mike_man",
+]);
 
 const DESKTOP_SKILLS = {
     voice: `---
@@ -74,7 +87,7 @@ brief.
 `,
     speak: `---
 name: speak
-description: Speak supplied text once with the local Broice Kokoro voice.
+description: Speak supplied text once with the local Broice voice.
 argument-hint: "<text>"
 user-invocable: true
 ---
@@ -129,13 +142,30 @@ function saveConfig(cfg) {
 
 let isReady = false;
 let isBootstrapping = false;
+let bootstrapPromise = null;
+let readyEngine = null;
 const runtimeState = createVoiceRuntimeState(loadConfig());
 
 function applyConfigPatch(patch) {
     const next = { ...loadConfig() };
 
+    if (patch.engine !== undefined) {
+        if (patch.engine !== "kokoro" && patch.engine !== "vibevoice") {
+            throw new Error("Engine must be kokoro or vibevoice.");
+        }
+        next.engine = patch.engine;
+        if (next.engine === "vibevoice" && !VIBEVOICE_VOICES.has(next.voice)) {
+            next.voice = "en-Carter_man";
+        }
+        if (next.engine === "kokoro" && !VOICES.has(next.voice)) {
+            next.voice = "af_sarah";
+        }
+    }
     if (patch.voice !== undefined) {
-        if (!VOICES.has(patch.voice)) throw new Error(`Unknown Broice voice: ${patch.voice}`);
+        const validVoices = (patch.engine || next.engine) === "vibevoice"
+            ? VIBEVOICE_VOICES
+            : VOICES;
+        if (!validVoices.has(patch.voice)) throw new Error(`Unknown Broice voice: ${patch.voice}`);
         next.voice = patch.voice;
     }
     if (patch.speed !== undefined) {
@@ -165,6 +195,8 @@ function applyConfigPatch(patch) {
     }
 
     saveConfig(next);
+    if (next.engine !== readyEngine) isReady = false;
+    if (next.engine !== "vibevoice") stopVibeVoiceWorker();
     runtimeState.publish({ config: next });
     return next;
 }
@@ -236,22 +268,162 @@ async function hasPythonDependencies() {
     if (!fs.existsSync(PYTHON_PATH)) return false;
 
     try {
-        await execFileAsync(PYTHON_PATH, [
-            "-c",
-            "import kokoro_onnx, soundfile, sounddevice"
-        ]);
+        const imports = loadConfig().engine === "vibevoice"
+            ? "import torch, transformers, vibevoice, soundfile, librosa"
+            : "import kokoro_onnx, soundfile, sounddevice";
+        await execFileAsync(PYTHON_PATH, ["-c", imports]);
         return true;
     } catch {
         return false;
     }
 }
 
+// --- VibeVoice persistent worker -------------------------------------------------
+//
+// Kokoro's ONNX model is cheap to load, so Broice spawns a fresh Python process
+// per utterance. VibeVoice's PyTorch/transformers checkpoint is not: reloading it
+// on every call costs roughly 13 seconds before generation even starts. To keep
+// VibeVoice usable, we run one long-lived Python worker that loads the model once
+// and answers requests over newline-delimited JSON on stdin/stdout.
+
+let vibevoiceWorker = null;
+let vibevoiceIdleTimer = null;
+let vibevoiceRequestCounter = 0;
+let vibevoiceGenerationInFlight = false;
+
+function ensureVibeVoiceWorker() {
+    if (vibevoiceWorker) return vibevoiceWorker.readyPromise;
+
+    const proc = spawn(PYTHON_PATH, [VIBEVOICE_WORKER_SCRIPT, "--model-dir", BIN_DIR], {
+        stdio: ["pipe", "pipe", "pipe"],
+    });
+    const pending = new Map();
+    const state = { intentionalStop: false };
+    const rl = readline.createInterface({ input: proc.stdout });
+
+    let readyResolve, readyReject;
+    const readyPromise = new Promise((resolve, reject) => {
+        readyResolve = resolve;
+        readyReject = reject;
+    });
+
+    rl.on("line", (line) => {
+        let message;
+        try {
+            message = JSON.parse(line);
+        } catch {
+            return;
+        }
+        if (message.type === "ready") {
+            readyResolve();
+            return;
+        }
+        const waiter = pending.get(message.id);
+        if (!waiter) return;
+        pending.delete(message.id);
+        if (message.type === "error") {
+            waiter.reject(new Error(message.message || "VibeVoice generation failed."));
+        } else {
+            waiter.resolve(message);
+        }
+    });
+
+    proc.stderr.on("data", (chunk) => {
+        process.stderr.write(`[vibevoice] ${chunk}`);
+    });
+
+    proc.on("exit", () => {
+        if (vibevoiceIdleTimer) {
+            clearTimeout(vibevoiceIdleTimer);
+            vibevoiceIdleTimer = null;
+        }
+        const aborted = state.intentionalStop;
+        for (const waiter of pending.values()) {
+            const error = new Error(
+                aborted ? "VibeVoice generation stopped." : "VibeVoice worker exited unexpectedly."
+            );
+            error.aborted = aborted;
+            waiter.reject(error);
+        }
+        pending.clear();
+        if (vibevoiceWorker?.proc === proc) vibevoiceWorker = null;
+        readyReject?.(new Error("VibeVoice worker exited during startup."));
+    });
+
+    proc.on("error", (error) => {
+        readyReject?.(error);
+    });
+
+    vibevoiceWorker = { proc, readyPromise, pending, state };
+    return readyPromise;
+}
+
+function stopVibeVoiceWorker() {
+    if (vibevoiceIdleTimer) {
+        clearTimeout(vibevoiceIdleTimer);
+        vibevoiceIdleTimer = null;
+    }
+    if (vibevoiceWorker) {
+        vibevoiceWorker.state.intentionalStop = true;
+        vibevoiceWorker.proc.kill("SIGTERM");
+        vibevoiceWorker = null;
+    }
+}
+
+function scheduleVibeVoiceIdleShutdown() {
+    if (vibevoiceIdleTimer) clearTimeout(vibevoiceIdleTimer);
+    vibevoiceIdleTimer = setTimeout(() => {
+        if (!vibevoiceGenerationInFlight) stopVibeVoiceWorker();
+    }, VIBEVOICE_IDLE_SHUTDOWN_MS);
+    vibevoiceIdleTimer.unref?.();
+}
+
+async function generateWithVibeVoice(text, voice, speed) {
+    await ensureVibeVoiceWorker();
+    const worker = vibevoiceWorker;
+    if (!worker) throw new Error("VibeVoice worker is not available.");
+
+    const id = `${process.pid}-${++vibevoiceRequestCounter}`;
+    vibevoiceGenerationInFlight = true;
+    try {
+        return await new Promise((resolve, reject) => {
+            worker.pending.set(id, { resolve, reject });
+            worker.proc.stdin.write(`${JSON.stringify({ id, text, voice, speed })}\n`);
+        });
+    } finally {
+        vibevoiceGenerationInFlight = false;
+        scheduleVibeVoiceIdleShutdown();
+    }
+}
+
+process.on("exit", () => {
+    stopVibeVoiceWorker();
+});
+
 async function bootstrap(session) {
-    if (isReady || isBootstrapping) return;
+    const engine = loadConfig().engine || "kokoro";
+    if (isReady && readyEngine === engine) return;
+    if (isBootstrapping) {
+        // A bootstrap for this (or another) engine is already in flight.
+        // Await it rather than returning immediately, otherwise a caller
+        // arriving mid-load would see isReady still false and fail outright.
+        await bootstrapPromise?.catch(() => {});
+        return bootstrap(session);
+    }
     isBootstrapping = true;
+    bootstrapPromise = runBootstrap(session, engine);
+    try {
+        await bootstrapPromise;
+    } finally {
+        isBootstrapping = false;
+        bootstrapPromise = null;
+    }
+}
+
+async function runBootstrap(session, engine) {
     runtimeState.publish({
         phase: "setup",
-        message: "Checking the local Kokoro voice runtime...",
+        message: `Checking the local ${engine === "vibevoice" ? "VibeVoice" : "Kokoro"} voice runtime...`,
         ready: false,
         speaking: false,
         error: null,
@@ -265,12 +437,16 @@ async function bootstrap(session) {
 
         const needsVenv = !fs.existsSync(PYTHON_PATH) || !(await isSupportedPython(PYTHON_PATH));
         const needsDependencies = needsVenv || !(await hasPythonDependencies());
-        const needsModel = !fs.existsSync(MODEL_PATH) || !fs.existsSync(VOICES_PATH);
+        const needsModel = engine === "kokoro"
+            ? !fs.existsSync(MODEL_PATH) || !fs.existsSync(VOICES_PATH)
+            : false;
 
         if (needsDependencies || needsModel) {
             runtimeState.publish({
                 phase: "setup",
-                message: "Installing Kokoro dependencies and neural weights...",
+                message: engine === "vibevoice"
+                    ? "Installing experimental VibeVoice dependencies..."
+                    : "Installing Kokoro dependencies and neural weights...",
             });
             await session.log("Setting up Broice dependencies and neural weights locally...", { level: "info" });
 
@@ -284,13 +460,19 @@ async function bootstrap(session) {
             if (needsDependencies) {
                 await session.log("Installing Broice Python dependencies...", { ephemeral: true });
                 await execFileAsync(PYTHON_PATH, ["-m", "pip", "install", "--upgrade", "pip"]);
-                await execFileAsync(PYTHON_PATH, [
-                    "-m", "pip",
-                    "install", "--upgrade", "kokoro-onnx", "soundfile", "sounddevice"
-                ]);
+                await execFileAsync(PYTHON_PATH, engine === "vibevoice"
+                    ? [
+                        "-m", "pip", "install", "--upgrade",
+                        "git+https://github.com/microsoft/VibeVoice.git",
+                        "transformers==4.51.3", "soundfile", "sounddevice", "librosa"
+                    ]
+                    : [
+                        "-m", "pip", "install", "--upgrade",
+                        "kokoro-onnx", "soundfile", "sounddevice"
+                    ]);
             }
 
-            if (!fs.existsSync(MODEL_PATH)) {
+            if (engine === "kokoro" && !fs.existsSync(MODEL_PATH)) {
                 await session.log("Downloading the Broice speech model (~310MB)...", { ephemeral: true });
                 await execFileAsync("curl", [
                     "-L", "-o", MODEL_PATH,
@@ -298,7 +480,7 @@ async function bootstrap(session) {
                 ]);
             }
 
-            if (!fs.existsSync(VOICES_PATH)) {
+            if (engine === "kokoro" && !fs.existsSync(VOICES_PATH)) {
                 await session.log("Downloading Broice voice data (~27MB)...", { ephemeral: true });
                 await execFileAsync("curl", [
                     "-L", "-o", VOICES_PATH,
@@ -306,10 +488,19 @@ async function bootstrap(session) {
                 ]);
             }
 
-            await session.log("Broice setup complete and ready!");
+            await session.log(`Broice ${engine} setup complete and ready!`);
+        }
+
+        if (engine === "vibevoice") {
+            runtimeState.publish({
+                phase: "setup",
+                message: "Loading VibeVoice model into memory (first load takes about 15 seconds)...",
+            });
+            await ensureVibeVoiceWorker();
         }
 
         isReady = true;
+        readyEngine = engine;
         runtimeState.publish({
             phase: "idle",
             message: "Local voice runtime is ready.",
@@ -330,7 +521,6 @@ async function bootstrap(session) {
         if (ownsBootstrapLock) {
             fs.rmSync(BOOTSTRAP_LOCK_DIR, { recursive: true, force: true });
         }
-        isBootstrapping = false;
     }
 }
 
@@ -437,6 +627,8 @@ function stopCrossProcessSpeech() {
 function stopSpeech(statusMessage = "Speech stopped.") {
     stopActiveSessionMonitor();
     stopCrossProcessSpeech();
+    let stopped = false;
+
     if (activeSpeechChild) {
         try {
             expectedSpeechStops.add(activeSpeechChild);
@@ -451,15 +643,27 @@ function stopSpeech(statusMessage = "Speech stopped.") {
             throw error;
         }
         activeSpeechChild = null;
+        stopped = true;
+    }
+
+    // VibeVoice generation runs inside the persistent worker with no
+    // per-utterance child process to kill. If a generation is in flight when
+    // the user cancels, the only way to interrupt it is to terminate the
+    // worker itself; it respawns (and reloads the model) on the next request.
+    if (vibevoiceGenerationInFlight) {
+        stopVibeVoiceWorker();
+        stopped = true;
+    }
+
+    if (stopped) {
         runtimeState.publish({
             phase: "idle",
             message: statusMessage,
             speaking: false,
             error: null,
         });
-        return true;
     }
-    return false;
+    return stopped;
 }
 
 async function isCurrentSessionForeground() {
@@ -500,6 +704,7 @@ async function speakText(
     langOverride = null,
     activeSessionOnly = false
 ) {
+    await bootstrap(session);
     if (!isReady) {
         throw new Error("Broice speech is not ready. Check the extension log for bootstrap errors.");
     }
@@ -515,29 +720,90 @@ async function speakText(
     stopSpeech();
 
     const config = loadConfig();
-    const voice = voiceOverride || config.voice || "af_sarah";
+    const engine = config.engine || "kokoro";
+    const voice = voiceOverride || config.voice || (engine === "vibevoice" ? "en-Carter_man" : "af_sarah");
     const speed = speedOverride !== null && speedOverride !== undefined ? speedOverride : (config.speed || 1.0);
     const lang = langOverride || config.lang || "en-us";
 
     const cleaned = cleanMarkdownForSpeech(text);
     if (!cleaned) return false;
 
+    if (engine === "vibevoice") {
+        return speakWithVibeVoice(cleaned, voice, speed, activeSessionOnly);
+    }
+    return playSpeechAudio({
+        command: PYTHON_PATH,
+        args: [SCRIPT_PATH, cleaned, "--voice", voice, "--speed", speed.toString(), "--lang", lang, "--model-dir", BIN_DIR],
+        speakingMessage: `Speaking with kokoro (${voice}) at ${Number(speed).toFixed(2)}x.`,
+        activeSessionOnly,
+        cleanupPath: null,
+    });
+}
+
+async function speakWithVibeVoice(cleaned, voice, speed, activeSessionOnly) {
     runtimeState.publish({
         phase: "speaking",
-        message: `Speaking with ${voice} at ${Number(speed).toFixed(2)}x.`,
+        message: `Generating speech with vibevoice (${voice})...`,
+        speaking: true,
+        error: null,
+    });
+
+    let generatedAudio;
+    try {
+        generatedAudio = await generateWithVibeVoice(cleaned, voice, speed);
+    } catch (error) {
+        if (error?.aborted) {
+            runtimeState.publish({ phase: "idle", message: "Speech stopped.", speaking: false, error: null });
+            return false;
+        }
+        runtimeState.publish({
+            phase: "error",
+            message: "VibeVoice generation failed.",
+            speaking: false,
+            error: getErrorMessage(error),
+        });
+        throw error;
+    }
+
+    return playSpeechAudio({
+        command: "afplay",
+        args: [generatedAudio.path],
+        speakingMessage: `Speaking with vibevoice (${voice}) at ${Number(speed).toFixed(2)}x.`,
+        activeSessionOnly,
+        cleanupPath: generatedAudio.path,
+        audioLevels: generatedAudio.levels,
+        audioDuration: generatedAudio.duration,
+    });
+}
+
+function playSpeechAudio({
+    command,
+    args,
+    speakingMessage,
+    activeSessionOnly,
+    cleanupPath,
+    audioLevels = null,
+    audioDuration = 0,
+}) {
+    runtimeState.publish({
+        phase: "speaking",
+        message: speakingMessage,
         speaking: true,
         error: null,
     });
 
     return new Promise((resolve, reject) => {
-        const child = execFile(PYTHON_PATH, [
-            SCRIPT_PATH,
-            cleaned,
-            "--voice", voice,
-            "--speed", speed.toString(),
-            "--lang", lang,
-            "--model-dir", BIN_DIR
-        ], (err) => {
+        let levelTimer = null;
+        const clearAudioLevelTimer = () => {
+            if (levelTimer) clearInterval(levelTimer);
+            levelTimer = null;
+            runtimeState.publish({ audioLevel: 0 });
+        };
+        const child = execFile(command, args, (err) => {
+            clearAudioLevelTimer();
+            if (cleanupPath) {
+                fs.rm(cleanupPath, { force: true }, () => {});
+            }
             if (child.pid) {
                 releaseCrossProcessSpeechLock(child.pid);
             }
@@ -567,6 +833,18 @@ async function speakText(
             });
             resolve(true);
         });
+        if (audioLevels?.length && audioDuration > 0) {
+            const startedAt = Date.now();
+            levelTimer = setInterval(() => {
+                const elapsed = (Date.now() - startedAt) / 1000;
+                const index = Math.min(
+                    audioLevels.length - 1,
+                    Math.floor((elapsed / audioDuration) * audioLevels.length)
+                );
+                runtimeState.publish({ audioLevel: audioLevels[index] || 0 });
+            }, 50);
+            levelTimer.unref?.();
+        }
         activeSpeechChild = child;
         if (child.pid) {
             claimCrossProcessSpeechLock(child.pid);
@@ -630,6 +908,17 @@ const server = http.createServer((req, res) => {
             res.end(fs.readFileSync(UI_PATH, "utf8"));
         } else {
             res.end("<h1>Broice settings UI not found</h1>");
+        }
+    } else if (req.method === "GET" && req.url === "/broice-logo.png") {
+        if (!fs.existsSync(UI_LOGO_PATH)) {
+            res.writeHead(404);
+            res.end();
+        } else {
+            res.writeHead(200, {
+                "Content-Type": "image/png",
+                "Cache-Control": "no-store",
+            });
+            res.end(fs.readFileSync(UI_LOGO_PATH));
         }
     } else if (req.method === "GET" && req.url === "/api/state") {
         writeJson(res, 200, runtimeState.getSnapshot());
@@ -725,10 +1014,11 @@ const voiceSettingsCanvas = createCanvas({
         },
         {
             name: "update_settings",
-            description: "Update Broice voice, speed, auto-read, active-session, language, or sample phrase settings.",
+            description: "Update Broice engine, voice, speed, auto-read, active-session, language, or sample phrase settings.",
             inputSchema: {
                 type: "object",
                 properties: {
+                    engine: { type: "string", enum: ["kokoro", "vibevoice"] },
                     voice: { type: "string" },
                     speed: { type: "number", minimum: 0.7, maximum: 1.5 },
                     lang: { type: "string", enum: ["en-us", "en-gb"] },
@@ -747,7 +1037,7 @@ const voiceSettingsCanvas = createCanvas({
                 type: "object",
                 properties: {
                     text: { type: "string", minLength: 1 },
-                    voice: { type: "string", enum: [...VOICES] },
+                    voice: { type: "string" },
                     speed: { type: "number", minimum: 0.7, maximum: 1.5 },
                 },
                 required: ["text"],
@@ -799,7 +1089,8 @@ session = await joinSession({
                 type: "object",
                 properties: {
                     text: { type: "string", description: "The text to speak out loud." },
-                    voice: { type: "string", description: "Voice ID (e.g. af_sarah, af_bella, am_adam, bf_emma, bm_george)" },
+                    engine: { type: "string", description: "Speech engine: kokoro or experimental vibevoice" },
+                    voice: { type: "string", description: "Voice ID for the selected engine" },
                     speed: { type: "number", description: "Playback speed (0.8 - 1.5, default 1.0)" },
                     lang: { type: "string", description: "Language code (default: en-us)" },
                 },
@@ -840,7 +1131,8 @@ session = await joinSession({
             parameters: {
                 type: "object",
                 properties: {
-                    voice: { type: "string", description: "Default voice: af_sarah, af_bella, am_adam, am_michael, bf_emma, bf_isabella, bm_george, bm_lewis" },
+                    engine: { type: "string", description: "Speech engine: kokoro or experimental vibevoice" },
+                    voice: { type: "string", description: "Default voice for the selected engine" },
                     speed: { type: "number", description: "Playback speed (0.8 - 1.5, default: 1.0)" },
                     lang: { type: "string", description: "Language code ('en-us', 'en-gb')" },
                     auto_read: { type: "boolean", description: "Enable or disable automatic reading of assistant messages." },

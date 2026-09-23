@@ -1,10 +1,12 @@
 # Broice
 
+<img src="ui/broice-logo.png" alt="Broice mascot" width="96">
+
 **Broice** gives GitHub Copilot a voice — 100% locally, on your own Mac.
 
 It reads Copilot's responses out loud using a local neural text-to-speech model, with an interactive settings panel built right into the Copilot side panel. No API keys, no cloud calls, no telemetry. Audio never leaves your machine.
 
-Broice runs the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) ONNX model (~82M parameters) under the hood.
+Broice runs the [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) ONNX model (~82M parameters) by default. This branch also includes an experimental opt-in VibeVoice-Realtime 0.5B backend for testing larger, more expressive local speech generation.
 
 ## Install with GitHub Copilot
 
@@ -17,6 +19,14 @@ Copilot installs Broice to `~/.copilot/extensions/broice` and reloads extensions
 Broice checks its public continuous GitHub Release hourly. Updates download silently,
 are checksum-verified, and preserve your settings and downloaded model files. Updated
 code becomes active the next time Copilot reloads extensions or restarts.
+
+### Current UI polish
+
+- Added the Broice mascot drawing to the settings header and README branding.
+- Served the mascot through the local settings server so the installed panel can load it.
+- Made the mascot a compact rounded-square mark.
+- Tightened panel padding, card spacing, control heights, and typography while keeping
+  the voice controls and audio-reactive status light intact.
 
 <p align="center">
   <img src="docs/settings-panel.png" alt="Broice settings panel inside GitHub Copilot" width="480">
@@ -36,6 +46,7 @@ code becomes active the next time Copilot reloads extensions or restarts.
 | **Smart speech rules** | Skips emojis, and reads `install.sh` as "install dot sh" instead of two separate words. |
 | **Self-bootstrapping** | On first run it creates its own Python venv and downloads model weights automatically. |
 | **10 voices** | American and British, male and female voices across natural, articulate, dynamic, and professional styles. |
+| **Experimental VibeVoice** | Optional VibeVoice-Realtime 0.5B engine with separate dependencies and speaker presets. |
 
 ---
 
@@ -69,6 +80,7 @@ code becomes active the next time Copilot reloads extensions or restarts.
 │  3. SPEECH ENGINE  (bin/)                                                      │
 │     ┌──────────────────────────────────────────────────────────┐               │
 │     │  speak.py  +  ONNX Runtime (kokoro-onnx)                 │               │
+│     │  speak_vibevoice_server.py  +  PyTorch (experimental, persistent) │        │
 │     │  • kokoro-v1.0.onnx   neural weights   ~310 MB           │               │
 │     │  • voices-v1.0.bin    voice embeddings  ~27 MB           │               │
 │     │  • renders latest_speech.wav                             │               │
@@ -191,6 +203,31 @@ audio, and cancel playback. Its setup, speaking, idle, and error state updates
 without refreshing.
 
 By default, Broice checks Copilot's foreground session before starting playback and while audio is playing. When the host exposes foreground-session information, replies from background sessions are skipped and switching away from a speaking session stops its audio. Hosts that do not expose this information continue playing audio rather than suppressing every response.
+
+### Experimental VibeVoice engine
+
+Open `/voice`, choose **VibeVoice Realtime 0.5B (experimental)**, and save.
+Broice keeps Kokoro as the default. VibeVoice dependencies are installed only
+when that engine is selected, and its model plus the selected official speaker
+preset are downloaded lazily the first time the engine is enabled.
+
+Because VibeVoice's PyTorch model takes roughly 13 seconds to import and load
+(versus Kokoro's near-instant ONNX load), Broice runs it in a **persistent
+background worker** instead of reloading it per utterance. Selecting the
+engine warms the worker once, then keeps it resident for 10 minutes of
+inactivity before shutting down automatically to free memory and reloading on
+the next request. VibeVoice generation is played from a complete WAV file for
+reliable, gap-free output; the experimental chunk-streaming API is not used
+because it can truncate or introduce audible gaps on some local systems.
+Switching back to Kokoro shuts the worker down immediately.
+
+Cancelling speech while VibeVoice is actively generating (before playback has
+started) terminates the worker outright, since there is no way to interrupt
+generation mid-flight; the next request pays the ~13 second reload cost again.
+Cancelling once VibeVoice has started playing audio is instant, same as Kokoro.
+
+VibeVoice is intended for local experimentation rather than a production
+default: it is larger, slower to initialize, and less mature than Kokoro.
 
 ### Stop speech mid-sentence
 
