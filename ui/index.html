@@ -415,39 +415,6 @@
   </section>
 
   <section class="card">
-    <h2 class="section-heading">Voice</h2>
-    <div class="field">
-      <label for="voice">Voice profile</label>
-      <select id="voice">
-        <optgroup label="American female">
-          <option value="af_sarah">Sarah - warm, natural</option>
-          <option value="af_bella">Bella - soft, clear</option>
-          <option value="af_nicole">Nicole - crisp, professional</option>
-          <option value="af_sky">Sky - dynamic</option>
-        </optgroup>
-        <optgroup label="American male">
-          <option value="am_adam">Adam - deep, articulate</option>
-          <option value="am_michael">Michael - friendly, standard</option>
-        </optgroup>
-        <optgroup label="British female">
-          <option value="bf_emma">Emma - conversational</option>
-          <option value="bf_isabella">Isabella - formal, articulate</option>
-        </optgroup>
-        <optgroup label="British male">
-          <option value="bm_george">George - classic British</option>
-          <option value="bm_lewis">Lewis - casual British</option>
-        </optgroup>
-        <optgroup label="VibeVoice experimental">
-          <option value="en-Carter_man">Carter - male</option>
-          <option value="en-Davis_man">Davis - male</option>
-          <option value="en-Emma_woman">Emma - female</option>
-          <option value="en-Frank_man">Frank - male</option>
-          <option value="en-Grace_woman">Grace - female</option>
-          <option value="en-Mike_man">Mike - male</option>
-        </optgroup>
-      </select>
-    </div>
-
     <div class="field">
       <div class="label-row">
         <label for="speed">Speech speed</label>
@@ -500,7 +467,6 @@
     currentVoice: document.getElementById("current-voice"),
     currentSpeed: document.getElementById("current-speed"),
     engine: document.getElementById("engine"),
-    voice: document.getElementById("voice"),
     speed: document.getElementById("speed"),
     speedValue: document.getElementById("speed-value"),
     autoRead: document.getElementById("auto-read"),
@@ -526,21 +492,12 @@
 
   function hydrateForm(config) {
     elements.engine.value = config.engine || "kokoro";
-    elements.voice.value = config.voice;
     elements.speed.value = config.speed;
     elements.speedValue.textContent = `${Number(config.speed).toFixed(2)}x`;
     elements.autoRead.checked = config.auto_read;
     elements.activeSessionOnly.checked = config.active_session_only;
     elements.samplePhrase.value = config.sample_phrase;
-    syncVoiceOptions();
     hydrated = true;
-  }
-
-  function syncVoiceOptions() {
-    const vibevoice = elements.engine.value === "vibevoice";
-    for (const option of elements.voice.options) {
-      option.hidden = vibevoice !== option.value.startsWith("en-");
-    }
   }
 
   function renderState(state) {
@@ -579,7 +536,6 @@
   function formConfig() {
     return {
       engine: elements.engine.value,
-      voice: elements.voice.value,
       speed: Number(elements.speed.value),
       auto_read: elements.autoRead.checked,
       active_session_only: elements.activeSessionOnly.checked,
@@ -599,13 +555,9 @@
 
   elements.engine.addEventListener("change", () => {
     formDirty = true;
-    syncVoiceOptions();
-    const firstVisible = [...elements.voice.options].find((option) => !option.hidden);
-    if (firstVisible) elements.voice.value = firstVisible.value;
   });
 
   for (const control of [
-    elements.voice,
     elements.autoRead,
     elements.activeSessionOnly,
     elements.samplePhrase,
@@ -639,7 +591,6 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: elements.samplePhrase.value,
-          voice: elements.voice.value,
           speed: Number(elements.speed.value),
         }),
       });

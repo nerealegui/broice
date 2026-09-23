@@ -27,6 +27,7 @@ code becomes active the next time Copilot reloads extensions or restarts.
 - Made the mascot a compact rounded-square mark.
 - Tightened panel padding, card spacing, control heights, and typography while keeping
   the voice controls and audio-reactive status light intact.
+- Limited the selectable voice to Sarah for Kokoro and Carter for VibeVoice.
 
 <p align="center">
   <img src="docs/settings-panel.png" alt="Broice settings panel inside GitHub Copilot" width="480">

@@ -9,4 +9,5 @@
 - Updated the mascot presentation to a compact rounded square.
 - Reduced panel padding, card spacing, control heights, and heading sizes for a
   more compact layout.
+- Limited voice selection to Sarah for Kokoro and Carter for VibeVoice.
 - Preserved the live audio-reactive status light and all existing voice controls.

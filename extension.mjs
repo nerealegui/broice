@@ -51,26 +51,10 @@ const DEFAULT_CONFIG = {
     sample_phrase: "Bro, this is a test of your local neural voice."
 };
 
-const VOICES = new Set([
-    "af_sarah",
-    "af_bella",
-    "af_nicole",
-    "af_sky",
-    "am_adam",
-    "am_michael",
-    "bf_emma",
-    "bf_isabella",
-    "bm_george",
-    "bm_lewis",
-]);
-const VIBEVOICE_VOICES = new Set([
-    "en-Carter_man",
-    "en-Davis_man",
-    "en-Emma_woman",
-    "en-Frank_man",
-    "en-Grace_woman",
-    "en-Mike_man",
-]);
+const KOKORO_VOICE = "af_sarah";
+const VIBEVOICE_VOICE = "en-Carter_man";
+const VOICES = new Set([KOKORO_VOICE]);
+const VIBEVOICE_VOICES = new Set([VIBEVOICE_VOICE]);
 
 const DESKTOP_SKILLS = {
     voice: `---
@@ -154,12 +138,7 @@ function applyConfigPatch(patch) {
             throw new Error("Engine must be kokoro or vibevoice.");
         }
         next.engine = patch.engine;
-        if (next.engine === "vibevoice" && !VIBEVOICE_VOICES.has(next.voice)) {
-            next.voice = "en-Carter_man";
-        }
-        if (next.engine === "kokoro" && !VOICES.has(next.voice)) {
-            next.voice = "af_sarah";
-        }
+        next.voice = next.engine === "vibevoice" ? VIBEVOICE_VOICE : KOKORO_VOICE;
     }
     if (patch.voice !== undefined) {
         const validVoices = (patch.engine || next.engine) === "vibevoice"

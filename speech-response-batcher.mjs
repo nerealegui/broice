@@ -115,7 +115,7 @@ export function createVoiceCommands({
             description: "Speak the text after the command with Broice.",
             handler: async ({ args }) => {
                 suppressAutoRead();
-                const text = args.trim();
+                const text = String(args ?? "").trim();
                 if (!text) {
                     await log("Usage: /speak <text>", { level: "warning" });
                     return;
