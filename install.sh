@@ -11,12 +11,14 @@ cp auto-updater.mjs "$DEST_DIR/"
 cp active-session.mjs "$DEST_DIR/"
 cp speech-response-batcher.mjs "$DEST_DIR/"
 cp speak.py "$DEST_DIR/"
+cp speak_vibevoice_server.py "$DEST_DIR/"
 cp copilot-extension.json "$DEST_DIR/"
 if [ ! -f "$DEST_DIR/config.json" ]; then
     cp config.json "$DEST_DIR/"
 fi
 cp -R skills "$DEST_DIR/"
 cp ui/index.html "$DEST_DIR/ui/"
+cp ui/broice-logo.png "$DEST_DIR/ui/"
 chmod +x "$DEST_DIR/speak.py"
 
 if [ -f ".broice-version" ]; then

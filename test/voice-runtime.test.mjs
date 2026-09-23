@@ -91,6 +91,21 @@ test("/speak without text shows usage and /stop cancels without model output", a
     assert.equal(logs[1].message, "Broice speech stopped.");
 });
 
+test("/speak handles a missing argument without throwing", async () => {
+    const logs = [];
+    const commands = createVoiceCommands({
+        openVoiceSettings: async () => {},
+        speak: async () => assert.fail("missing /speak args should not start speech"),
+        stop: () => false,
+        suppressAutoRead: () => {},
+        log: async (message) => logs.push(message),
+    });
+
+    await commands[1].handler({});
+
+    assert.deepEqual(logs, ["Usage: /speak <text>"]);
+});
+
 test("dashboard uses host theme tokens and server-sent state events", async () => {
     const html = await import("node:fs/promises").then(({ readFile }) =>
         readFile(new URL("../ui/index.html", import.meta.url), "utf8")
