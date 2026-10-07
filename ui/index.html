@@ -400,6 +400,14 @@
       <span class="summary-label">Current speed</span>
       <span class="summary-value" id="current-speed">--</span>
     </div>
+    <div class="summary-item">
+      <span class="summary-label" id="generation-label">Last generation</span>
+      <span class="summary-value" id="generation-time">--</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Generated audio</span>
+      <span class="summary-value" id="audio-duration">--</span>
+    </div>
   </section>
 
   <section class="card">
@@ -466,6 +474,9 @@
     statusError: document.getElementById("status-error"),
     currentVoice: document.getElementById("current-voice"),
     currentSpeed: document.getElementById("current-speed"),
+    generationLabel: document.getElementById("generation-label"),
+    generationTime: document.getElementById("generation-time"),
+    audioDuration: document.getElementById("audio-duration"),
     engine: document.getElementById("engine"),
     speed: document.getElementById("speed"),
     speedValue: document.getElementById("speed-value"),
@@ -500,6 +511,29 @@
     hydrated = true;
   }
 
+  function formatDuration(milliseconds) {
+    if (!Number.isFinite(milliseconds)) return "--";
+    if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+    return `${(milliseconds / 1000).toFixed(1)}s`;
+  }
+
+  function renderGenerationMetrics() {
+    if (!latestState) return;
+    if (latestState.generationActive && latestState.generationStartedAt) {
+      const currentElapsed = Date.now() - new Date(latestState.generationStartedAt).getTime();
+      const totalElapsed = (latestState.generationElapsedMs || 0) + currentElapsed;
+      elements.generationLabel.textContent =
+        `Generating chunk ${latestState.generationChunk}/${latestState.generationChunks}`;
+      elements.generationTime.textContent = formatDuration(totalElapsed);
+    } else {
+      elements.generationLabel.textContent = "Last generation";
+      elements.generationTime.textContent = formatDuration(latestState.lastGenerationMs);
+    }
+    elements.audioDuration.textContent = latestState.lastAudioDuration == null
+      ? "--"
+      : `${Number(latestState.lastAudioDuration).toFixed(1)}s`;
+  }
+
   function renderState(state) {
     latestState = state;
     const config = state.config || {};
@@ -528,6 +562,7 @@
     elements.currentSpeed.textContent = config.speed === undefined
       ? "--"
       : `${Number(config.speed).toFixed(2)}x`;
+    renderGenerationMetrics();
     elements.preview.disabled = !state.ready || state.speaking;
     elements.stop.disabled = !state.speaking;
     if (!hydrated || !formDirty) hydrateForm(config);
@@ -620,6 +655,8 @@
       elements.statusMessage.textContent = "Reconnecting to Broice...";
     }
   };
+
+  setInterval(renderGenerationMetrics, 100);
 </script>
 </body>
 </html>

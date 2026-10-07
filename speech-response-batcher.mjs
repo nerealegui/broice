@@ -58,6 +58,13 @@ export function createVoiceRuntimeState(initialConfig) {
         ready: false,
         speaking: false,
         error: null,
+        generationActive: false,
+        generationChunk: 0,
+        generationChunks: 0,
+        generationStartedAt: null,
+        generationElapsedMs: 0,
+        lastGenerationMs: null,
+        lastAudioDuration: null,
         config: { ...initialConfig },
         updated_at: new Date().toISOString(),
     };

@@ -8,6 +8,8 @@ import {
 
 test("runtime state publishes immutable live snapshots", () => {
     const state = createVoiceRuntimeState({ voice: "af_sarah", speed: 1 });
+    assert.equal(state.getSnapshot().lastGenerationMs, null);
+    assert.equal(state.getSnapshot().generationActive, false);
     const updates = [];
     const unsubscribe = state.subscribe((snapshot) => updates.push(snapshot));
 
