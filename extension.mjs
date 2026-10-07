@@ -53,6 +53,11 @@ const DEFAULT_CONFIG = {
 
 const KOKORO_VOICE = "af_sarah";
 const VIBEVOICE_VOICE = "en-Carter_man";
+// Benchmarks show VibeVoice generation runs at ~1.2-1.5x real-time with a ~1s
+// fixed overhead per call. Splitting long responses into chunks this size lets
+// playback start after the first chunk generates (a few seconds) instead of
+// after the whole response, while keeping per-call overhead reasonable.
+const VIBEVOICE_CHUNK_MAX_WORDS = 30;
 const VOICES = new Set([KOKORO_VOICE]);
 const VIBEVOICE_VOICES = new Set([VIBEVOICE_VOICE]);
 
@@ -719,40 +724,142 @@ async function speakText(
     });
 }
 
+// Splits text into sentence-grouped chunks of at most `maxWords` words. Used to
+// pipeline VibeVoice generation with playback (see speakWithVibeVoice) instead
+// of generating the entire response before any audio plays.
+function splitIntoSpeechChunks(text, maxWords = VIBEVOICE_CHUNK_MAX_WORDS) {
+    const sentences = text.match(/[^.!?\n]+[.!?]*(?:\s+|\n+|$)/g) || [text];
+    const chunks = [];
+    let current = "";
+    let currentWords = 0;
+    for (const raw of sentences) {
+        const sentence = raw.trim();
+        if (!sentence) continue;
+        const words = sentence.split(/\s+/).length;
+        if (current && currentWords + words > maxWords) {
+            chunks.push(current);
+            current = sentence;
+            currentWords = words;
+        } else {
+            current = current ? `${current} ${sentence}` : sentence;
+            currentWords += words;
+        }
+    }
+    if (current) chunks.push(current);
+    return chunks.length ? chunks : [text];
+}
+
 async function speakWithVibeVoice(cleaned, voice, speed, activeSessionOnly) {
+    const chunks = splitIntoSpeechChunks(cleaned);
+    let totalGenerationMs = 0;
+    let totalAudioDuration = 0;
+
     runtimeState.publish({
         phase: "speaking",
         message: `Generating speech with vibevoice (${voice})...`,
         speaking: true,
         error: null,
+        generationActive: true,
+        generationChunk: 1,
+        generationChunks: chunks.length,
+        generationStartedAt: new Date().toISOString(),
+        generationElapsedMs: 0,
     });
 
-    let generatedAudio;
-    try {
-        generatedAudio = await generateWithVibeVoice(cleaned, voice, speed);
-    } catch (error) {
-        if (error?.aborted) {
-            runtimeState.publish({ phase: "idle", message: "Speech stopped.", speaking: false, error: null });
-            return false;
-        }
+    // Holds the in-flight generation promise for the chunk after the one
+    // currently playing, so it can be cleaned up if playback is cancelled
+    // before that chunk's audio is consumed.
+    let pendingNext = null;
+
+    const startGeneration = (text, chunkIndex) => {
+        const startedAt = Date.now();
         runtimeState.publish({
-            phase: "error",
-            message: "VibeVoice generation failed.",
-            speaking: false,
-            error: getErrorMessage(error),
+            generationActive: true,
+            generationChunk: chunkIndex + 1,
+            generationChunks: chunks.length,
+            generationStartedAt: new Date(startedAt).toISOString(),
+            generationElapsedMs: totalGenerationMs,
         });
-        throw error;
-    }
+        return generateWithVibeVoice(text, voice, speed).then((audio) => {
+            const generationMs = Date.now() - startedAt;
+            totalGenerationMs += generationMs;
+            totalAudioDuration += audio.duration || 0;
+            runtimeState.publish({
+                generationActive: false,
+                generationStartedAt: null,
+                generationElapsedMs: totalGenerationMs,
+                ...(chunkIndex === chunks.length - 1
+                    ? {
+                        lastGenerationMs: totalGenerationMs,
+                        lastAudioDuration: totalAudioDuration,
+                    }
+                    : {}),
+            });
+            return audio;
+        });
+    };
 
-    return playSpeechAudio({
-        command: "afplay",
-        args: [generatedAudio.path],
-        speakingMessage: `Speaking with vibevoice (${voice}) at ${Number(speed).toFixed(2)}x.`,
-        activeSessionOnly,
-        cleanupPath: generatedAudio.path,
-        audioLevels: generatedAudio.levels,
-        audioDuration: generatedAudio.duration,
-    });
+    try {
+        let current = startGeneration(chunks[0], 0);
+        for (let i = 0; i < chunks.length; i++) {
+            let generatedAudio;
+            try {
+                generatedAudio = await current;
+            } catch (error) {
+                if (error?.aborted) {
+                    runtimeState.publish({ phase: "idle", message: "Speech stopped.", speaking: false, error: null });
+                    return false;
+                }
+                runtimeState.publish({
+                    phase: "error",
+                    message: "VibeVoice generation failed.",
+                    speaking: false,
+                    error: getErrorMessage(error),
+                });
+                throw error;
+            }
+
+            // Kick off generation of the next chunk now so it overlaps with
+            // this chunk's playback instead of happening after it.
+            pendingNext = i + 1 < chunks.length ? startGeneration(chunks[i + 1], i + 1) : null;
+            current = pendingNext;
+
+            const played = await playSpeechAudio({
+                command: "afplay",
+                args: [generatedAudio.path],
+                speakingMessage: `Speaking with vibevoice (${voice}) at ${Number(speed).toFixed(2)}x.`,
+                activeSessionOnly,
+                cleanupPath: generatedAudio.path,
+                audioLevels: generatedAudio.levels,
+                audioDuration: generatedAudio.duration,
+            });
+
+            if (!played) return false;
+        }
+        pendingNext = null;
+        runtimeState.publish({
+            generationActive: false,
+            generationStartedAt: null,
+            generationElapsedMs: totalGenerationMs,
+            lastGenerationMs: totalGenerationMs,
+            lastAudioDuration: totalAudioDuration,
+        });
+        return true;
+    } finally {
+        if (pendingNext) {
+            pendingNext
+                .then((audio) => {
+                    if (audio?.path) fs.rm(audio.path, { force: true }, () => {});
+                })
+                .catch(() => {});
+        }
+        if (runtimeState.getSnapshot().generationActive) {
+            runtimeState.publish({
+                generationActive: false,
+                generationStartedAt: null,
+            });
+        }
+    }
 }
 
 function playSpeechAudio({

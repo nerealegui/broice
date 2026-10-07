@@ -28,6 +28,9 @@ code becomes active the next time Copilot reloads extensions or restarts.
 - Tightened panel padding, card spacing, control heights, and typography while keeping
   the voice controls and audio-reactive status light intact.
 - Limited the selectable voice to Sarah for Kokoro and Carter for VibeVoice.
+- Reduced advanced-mode wait time by generating VibeVoice responses in sentence-sized
+  chunks and preparing the next chunk while the current chunk plays.
+- Added live generation timing and generated-audio duration to the settings panel.
 
 <p align="center">
   <img src="docs/settings-panel.png" alt="Broice settings panel inside GitHub Copilot" width="480">
@@ -47,7 +50,7 @@ code becomes active the next time Copilot reloads extensions or restarts.
 | **Smart speech rules** | Skips emojis, and reads `install.sh` as "install dot sh" instead of two separate words. |
 | **Self-bootstrapping** | On first run it creates its own Python venv and downloads model weights automatically. |
 | **10 voices** | American and British, male and female voices across natural, articulate, dynamic, and professional styles. |
-| **Experimental VibeVoice** | Optional VibeVoice-Realtime 0.5B engine with separate dependencies and speaker presets. |
+| **Experimental VibeVoice** | Optional VibeVoice-Realtime 0.5B engine with a persistent worker and sentence-level generation/playback pipelining. |
 
 ---
 
@@ -73,6 +76,7 @@ code becomes active the next time Copilot reloads extensions or restarts.
 │     │  • Coordinates setup safely across concurrent sessions   │               │
 │     │  • Buffers "assistant.message" until "session.idle"      │               │
 │     │  • Cleans Markdown, strips emojis, expands code names    │               │
+│     │  • Pipelines VibeVoice chunks to reduce first-audio wait │               │
 │     │  • Serves the Canvas UI over a local HTTP server         │               │
 │     │  • Tools: speak / stop_speaking / configure_voice        │               │
 │     └───────────────────────────┬──────────────────────────────┘               │
@@ -111,6 +115,13 @@ cleanMarkdownForSpeech()
 speak.py  ──►  Kokoro ONNX  ──►  WAV  ──►  afplay  ──►  audio out
      ▲
      └── SIGTERM from stopSpeech() cancels playback immediately
+
+VibeVoice path:
+cleaned text  ──►  sentence-sized chunks
+                       │
+                       ├── generate chunk 1  ──►  play chunk 1
+                       │                         while chunk 2 generates
+                       └── repeat until complete
 ```
 
 ### Canvas flow
@@ -190,6 +201,14 @@ autocomplete:
 | `/speak <text>` | Speaks the supplied text once without generating an assistant reply or duplicate auto-read. |
 | `/stop` | Stops playback and suppresses any pending auto-read. |
 
+`/speak` requires text in the same submission. For example:
+
+```text
+/speak Hello bro, this is a test of the advanced voice.
+```
+
+Do not submit the bare `/speak` palette entry and then enter the text separately.
+
 Copilot's terminal TUI runs these as native SDK client commands. The desktop app
 currently filters client commands from its composer, so Broice also installs
 user-invocable skill adapters with the same names. This keeps all three entries
@@ -217,15 +236,26 @@ Because VibeVoice's PyTorch model takes roughly 13 seconds to import and load
 background worker** instead of reloading it per utterance. Selecting the
 engine warms the worker once, then keeps it resident for 10 minutes of
 inactivity before shutting down automatically to free memory and reloading on
-the next request. VibeVoice generation is played from a complete WAV file for
-reliable, gap-free output; the experimental chunk-streaming API is not used
-because it can truncate or introduce audible gaps on some local systems.
+the next request.
+
+To reduce time-to-first-audio, long responses are grouped into sentence-sized
+chunks of roughly 30 words. Broice generates the first chunk, starts playing its
+complete WAV file, and generates the next chunk concurrently. This preserves
+reliable file-based playback without waiting for the entire response to finish
+generating. In local testing, a 120-word response began playing after about
+9.7 seconds instead of about 47 seconds. This is sentence-level pipelining, not
+the model's experimental raw audio-streaming API, so very long responses may
+still have a short pause when generation cannot keep ahead of playback.
 Switching back to Kokoro shuts the worker down immediately.
 
-Cancelling speech while VibeVoice is actively generating (before playback has
-started) terminates the worker outright, since there is no way to interrupt
-generation mid-flight; the next request pays the ~13 second reload cost again.
-Cancelling once VibeVoice has started playing audio is instant, same as Kokoro.
+The settings panel shows a live cumulative generation timer while chunks are
+being prepared, then retains the completed generation time and generated audio
+duration for the most recent VibeVoice response.
+
+Cancelling speech while VibeVoice is generating terminates the worker outright,
+since there is no way to interrupt generation mid-flight; the next request pays
+the ~13 second reload cost again. If a chunk is already playing, its playback is
+also stopped immediately and any unused generated audio is cleaned up.
 
 VibeVoice is intended for local experimentation rather than a production
 default: it is larger, slower to initialize, and less mature than Kokoro.
