@@ -53,14 +53,37 @@ const DEFAULT_CONFIG = {
 
 const KOKORO_VOICE = "af_sarah";
 const VIBEVOICE_VOICE = "en-Carter_man";
-const VOICES = new Set([KOKORO_VOICE]);
-const VIBEVOICE_VOICES = new Set([VIBEVOICE_VOICE]);
+const SETTINGS_OPTIONS = {
+    engines: [
+        {
+            value: "kokoro",
+            label: "Kokoro (recommended)",
+            noteTitle: "Kokoro",
+            description: "Fast local speech with English (US) and English (UK) language options.",
+            voices: [{ value: KOKORO_VOICE, label: "Sarah" }],
+            languages: [
+                { value: "en-us", label: "English (US)" },
+                { value: "en-gb", label: "English (UK)" },
+            ],
+        },
+        {
+            value: "vibevoice",
+            label: "VibeVoice Realtime 0.5B (experimental)",
+            noteTitle: "VibeVoice (Experimental)",
+            description: "More expressive speech, but model setup and generation can take longer. Uses Carter with English (US) output.",
+            voices: [{ value: VIBEVOICE_VOICE, label: "Carter" }],
+            languages: [],
+        },
+    ],
+};
 
 const DESKTOP_SKILLS = {
     voice: `---
 name: voice
 description: Open the Broice local voice settings dashboard.
 user-invocable: true
+allowed-tools:
+  - open_canvas
 ---
 
 # Broice voice dashboard
@@ -74,6 +97,8 @@ name: speak
 description: Speak supplied text once with the local Broice voice.
 argument-hint: "<text>"
 user-invocable: true
+allowed-tools:
+  - speak
 ---
 
 # Speak with Broice
@@ -86,6 +111,8 @@ provided, respond with \`Usage: /speak <text>\`.
 name: stop
 description: Stop Broice speech immediately.
 user-invocable: true
+allowed-tools:
+  - stop_speaking
 ---
 
 # Stop Broice
@@ -141,10 +168,11 @@ function applyConfigPatch(patch) {
         next.voice = next.engine === "vibevoice" ? VIBEVOICE_VOICE : KOKORO_VOICE;
     }
     if (patch.voice !== undefined) {
-        const validVoices = (patch.engine || next.engine) === "vibevoice"
-            ? VIBEVOICE_VOICES
-            : VOICES;
-        if (!validVoices.has(patch.voice)) throw new Error(`Unknown Broice voice: ${patch.voice}`);
+        const engine = patch.engine || next.engine;
+        const validVoices = SETTINGS_OPTIONS.engines.find((option) => option.value === engine)?.voices || [];
+        if (!validVoices.some(({ value }) => value === patch.voice)) {
+            throw new Error(`Unknown Broice voice for ${engine}: ${patch.voice}`);
+        }
         next.voice = patch.voice;
     }
     if (patch.speed !== undefined) {
@@ -176,7 +204,7 @@ function applyConfigPatch(patch) {
     saveConfig(next);
     if (next.engine !== readyEngine) isReady = false;
     if (next.engine !== "vibevoice") stopVibeVoiceWorker();
-    runtimeState.publish({ config: next });
+    runtimeState.publish({ config: next, ready: isReady && readyEngine === next.engine });
     return next;
 }
 
@@ -243,11 +271,11 @@ async function findCompatiblePython() {
     throw new Error("Broice requires Python 3.10 through 3.13. Install a compatible Python and reload the extension.");
 }
 
-async function hasPythonDependencies() {
+async function hasPythonDependencies(engine = loadConfig().engine) {
     if (!fs.existsSync(PYTHON_PATH)) return false;
 
     try {
-        const imports = loadConfig().engine === "vibevoice"
+        const imports = engine === "vibevoice"
             ? "import torch, transformers, vibevoice, soundfile, librosa"
             : "import kokoro_onnx, soundfile, sounddevice";
         await execFileAsync(PYTHON_PATH, ["-c", imports]);
@@ -379,15 +407,15 @@ process.on("exit", () => {
     stopVibeVoiceWorker();
 });
 
-async function bootstrap(session) {
-    const engine = loadConfig().engine || "kokoro";
+async function bootstrap(session, engineOverride = null) {
+    const engine = engineOverride || loadConfig().engine || "kokoro";
     if (isReady && readyEngine === engine) return;
     if (isBootstrapping) {
         // A bootstrap for this (or another) engine is already in flight.
         // Await it rather than returning immediately, otherwise a caller
         // arriving mid-load would see isReady still false and fail outright.
         await bootstrapPromise?.catch(() => {});
-        return bootstrap(session);
+        return bootstrap(session, engine);
     }
     isBootstrapping = true;
     bootstrapPromise = runBootstrap(session, engine);
@@ -415,7 +443,7 @@ async function runBootstrap(session, engine) {
         ownsBootstrapLock = true;
 
         const needsVenv = !fs.existsSync(PYTHON_PATH) || !(await isSupportedPython(PYTHON_PATH));
-        const needsDependencies = needsVenv || !(await hasPythonDependencies());
+        const needsDependencies = needsVenv || !(await hasPythonDependencies(engine));
         const needsModel = engine === "kokoro"
             ? !fs.existsSync(MODEL_PATH) || !fs.existsSync(VOICES_PATH)
             : false;
@@ -681,9 +709,26 @@ async function speakText(
     voiceOverride = null,
     speedOverride = null,
     langOverride = null,
-    activeSessionOnly = false
+    activeSessionOnly = false,
+    engineOverride = null
 ) {
-    await bootstrap(session);
+    const config = loadConfig();
+    const engine = engineOverride || config.engine || "kokoro";
+    const engineOptions = SETTINGS_OPTIONS.engines.find((option) => option.value === engine);
+    if (!engineOptions) throw new Error(`Unknown speech engine: ${engine}`);
+    const voice = voiceOverride || config.voice || engineOptions.voices[0].value;
+    if (!engineOptions.voices.some((option) => option.value === voice)) {
+        throw new Error(`Unknown Broice voice for ${engine}: ${voice}`);
+    }
+    const speed = speedOverride !== null && speedOverride !== undefined ? speedOverride : (config.speed || 1.0);
+    const lang = langOverride || config.lang || "en-us";
+    if (!Number.isFinite(Number(speed)) || Number(speed) < 0.7 || Number(speed) > 1.5) {
+        throw new Error("Speed must be between 0.7 and 1.5.");
+    }
+    if (engine === "kokoro" && !engineOptions.languages.some((option) => option.value === lang)) {
+        throw new Error(`Unsupported Kokoro language: ${lang}`);
+    }
+    await bootstrap(session, engine);
     if (!isReady) {
         throw new Error("Broice speech is not ready. Check the extension log for bootstrap errors.");
     }
@@ -697,12 +742,6 @@ async function speakText(
         return false;
     }
     stopSpeech();
-
-    const config = loadConfig();
-    const engine = config.engine || "kokoro";
-    const voice = voiceOverride || config.voice || (engine === "vibevoice" ? "en-Carter_man" : "af_sarah");
-    const speed = speedOverride !== null && speedOverride !== undefined ? speedOverride : (config.speed || 1.0);
-    const lang = langOverride || config.lang || "en-us";
 
     const cleaned = cleanMarkdownForSpeech(text);
     if (!cleaned) return false;
@@ -872,7 +911,7 @@ function readJson(req) {
 }
 
 function sendStateEvent(res, state) {
-    res.write(`event: state\ndata: ${JSON.stringify(state)}\n\n`);
+    res.write(`event: state\ndata: ${JSON.stringify({ ...state, settings_options: SETTINGS_OPTIONS })}\n\n`);
 }
 
 let serverPort = null;
@@ -900,7 +939,10 @@ const server = http.createServer((req, res) => {
             res.end(fs.readFileSync(UI_LOGO_PATH));
         }
     } else if (req.method === "GET" && req.url === "/api/state") {
-        writeJson(res, 200, runtimeState.getSnapshot());
+        writeJson(res, 200, {
+            ...runtimeState.getSnapshot(),
+            settings_options: SETTINGS_OPTIONS,
+        });
     } else if (req.method === "GET" && req.url === "/api/events") {
         res.writeHead(200, {
             "Content-Type": "text/event-stream",
@@ -935,9 +977,9 @@ const server = http.createServer((req, res) => {
         }
         writeJson(res, 200, { success: true, stopped });
     } else if (req.method === "POST" && req.url === "/api/test-speech") {
-        void readJson(req).then(async ({ text, voice, speed }) => {
+        void readJson(req).then(async ({ text, engine, voice, speed, lang }) => {
             try {
-                await speakText(text || "Hello!", voice, speed);
+                await speakText(text || "Hello!", voice, speed, lang, false, engine);
                 writeJson(res, 200, { success: true });
             } catch (error) {
                 writeJson(res, 500, { error: getErrorMessage(error) });
@@ -1084,7 +1126,8 @@ session = await joinSession({
                     args.voice,
                     args.speed,
                     args.lang,
-                    cfg.active_session_only
+                    cfg.active_session_only,
+                    args.engine
                 );
                 return spoken
                     ? "Spoken successfully."

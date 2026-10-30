@@ -116,6 +116,12 @@ test("dashboard uses host theme tokens and server-sent state events", async () =
     assert.match(html, /--text-color-default/);
     assert.match(html, /--color-focus-outline/);
     assert.match(html, /new EventSource\("\/api\/events"\)/);
+    assert.match(html, /id="engine-note"/);
+    assert.match(html, /id="voice"/);
+    assert.match(html, /id="language"/);
+    assert.match(html, /settings_options/);
+    assert.match(html, /engine: elements\.engine\.value/);
+    assert.match(html, /lang: elements\.language\.value/);
     assert.match(html, /id="active-session-only"/);
     assert.match(html, /id="sample-phrase"/);
 });
@@ -134,6 +140,19 @@ test("desktop skill adapters expose the voice command suite", async () => {
         assert.match(skills[index], /description: .+/);
     }
     assert.match(skills[0], /open_canvas/);
+    assert.match(skills[0], /allowed-tools:\s+- open_canvas/);
     assert.match(skills[1], /Call the `speak` tool exactly once/);
+    assert.match(skills[1], /allowed-tools:\s+- speak/);
     assert.match(skills[2], /Call the `stop_speaking` tool exactly once/);
+    assert.match(skills[2], /allowed-tools:\s+- stop_speaking/);
+
+    const extension = await readFile(new URL("../extension.mjs", import.meta.url), "utf8");
+    for (const [name, tool] of [
+        ["voice", "open_canvas"],
+        ["speak", "speak"],
+        ["stop", "stop_speaking"],
+    ]) {
+        assert.ok(extension.includes(`name: ${name}`));
+        assert.ok(extension.includes(`user-invocable: true\nallowed-tools:\n  - ${tool}`));
+    }
 });

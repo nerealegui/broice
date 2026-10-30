@@ -2,6 +2,8 @@
 name: voice
 description: Open the Broice local voice settings dashboard.
 user-invocable: true
+allowed-tools:
+  - open_canvas
 ---
 
 # Broice voice dashboard
