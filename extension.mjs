@@ -82,6 +82,8 @@ const DESKTOP_SKILLS = {
 name: voice
 description: Open the Broice local voice settings dashboard.
 user-invocable: true
+allowed-tools:
+  - open_canvas
 ---
 
 # Broice voice dashboard
@@ -95,6 +97,8 @@ name: speak
 description: Speak supplied text once with the local Broice voice.
 argument-hint: "<text>"
 user-invocable: true
+allowed-tools:
+  - speak
 ---
 
 # Speak with Broice
@@ -107,6 +111,8 @@ provided, respond with \`Usage: /speak <text>\`.
 name: stop
 description: Stop Broice speech immediately.
 user-invocable: true
+allowed-tools:
+  - stop_speaking
 ---
 
 # Stop Broice

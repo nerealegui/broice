@@ -3,6 +3,8 @@ name: speak
 description: Speak supplied text once with the local Broice Kokoro voice.
 argument-hint: "<text>"
 user-invocable: true
+allowed-tools:
+  - speak
 ---
 
 # Speak with Broice
