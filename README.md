@@ -197,11 +197,13 @@ discoverable in desktop slash autocomplete while preserving direct command
 execution in the terminal.
 
 The conversational shortcuts `/tts`, `/voices`, `voice settings`, `/quiet`,
-`/silence`, `/shh`, and `/cancel` remain available. From the settings panel you can
-pick a voice, adjust speed from 0.7x to 1.5x, toggle automatic reading, restrict
-speech to the session currently shown, edit and save your sample phrase, preview
-audio, and cancel playback. Its setup, speaking, idle, and error state updates
-without refreshing.
+`/silence`, `/shh`, and `/cancel` remain available. The engine-aware settings panel
+shows each engine's voice options and constraints, exposes Kokoro's English (US/UK)
+language setting, and lets you adjust speed from 0.7x to 1.5x, toggle automatic
+reading, restrict speech to the session currently shown, edit and save your sample
+phrase, preview audio, and cancel playback. Kokoro currently offers Sarah, while
+VibeVoice currently offers Carter and uses English (US). The panel's setup,
+speaking, idle, and error state updates without refreshing.
 
 By default, Broice checks Copilot's foreground session before starting playback and while audio is playing. When the host exposes foreground-session information, replies from background sessions are skipped and switching away from a speaking session stops its audio. Hosts that do not expose this information continue playing audio rather than suppressing every response.
 
@@ -295,11 +297,11 @@ The entire frontend lives in a single self-contained file: `ui/index.html`. Edit
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/state` | `GET` | Read settings plus live setup/playback status |
+| `/api/state` | `GET` | Read settings, engine options, and live setup/playback status |
 | `/api/events` | `GET` | Subscribe to status and configuration updates with SSE |
-| `/api/config` | `GET` | Read `{ voice, speed, lang, auto_read, active_session_only, sample_phrase }` |
+| `/api/config` | `GET` | Read `{ engine, voice, speed, lang, auto_read, active_session_only, sample_phrase }` |
 | `/api/config` | `POST` | Validate and persist settings to `config.json` |
-| `/api/test-speech` | `POST` | Synthesize and play `{ text, voice, speed }` |
+| `/api/test-speech` | `POST` | Synthesize and play `{ text, engine, voice, speed, lang }` |
 | `/api/stop-speech` | `POST` | Cancel active playback |
 
 ---

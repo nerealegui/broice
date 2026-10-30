@@ -116,6 +116,12 @@ test("dashboard uses host theme tokens and server-sent state events", async () =
     assert.match(html, /--text-color-default/);
     assert.match(html, /--color-focus-outline/);
     assert.match(html, /new EventSource\("\/api\/events"\)/);
+    assert.match(html, /id="engine-note"/);
+    assert.match(html, /id="voice"/);
+    assert.match(html, /id="language"/);
+    assert.match(html, /settings_options/);
+    assert.match(html, /engine: elements\.engine\.value/);
+    assert.match(html, /lang: elements\.language\.value/);
     assert.match(html, /id="active-session-only"/);
     assert.match(html, /id="sample-phrase"/);
 });

@@ -240,6 +240,33 @@
     font-weight: var(--font-weight-semibold, 600);
   }
 
+  .engine-note {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+    align-items: start;
+    margin-top: 10px;
+    padding: 9px;
+    border: 1px solid color-mix(in srgb, var(--true-color-blue, #0969da) 24%, var(--border-color-default, #d0d7de));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--background-color-default, #ffffff) 94%, var(--true-color-blue-muted, #ddf4ff));
+  }
+
+  .engine-note[hidden], .field[hidden] {
+    display: none;
+  }
+
+  .engine-note strong {
+    display: block;
+    font-weight: var(--font-weight-semibold, 600);
+  }
+
+  .engine-note p {
+    margin: 2px 0 0;
+    color: var(--text-color-muted, #656d76);
+    font-size: var(--text-body-small, 12px);
+  }
+
   .field {
     margin-top: 10px;
   }
@@ -406,15 +433,24 @@
     <h2 class="section-heading">Voice engine</h2>
     <div class="field">
       <label for="engine">Engine</label>
-      <select id="engine">
-        <option value="kokoro">Kokoro (recommended)</option>
-        <option value="vibevoice">VibeVoice Realtime 0.5B (experimental)</option>
-      </select>
-      <span class="field-note">VibeVoice is the experimental big-brain option and may be slower on this Mac.</span>
+      <select id="engine"></select>
     </div>
-  </section>
-
-  <section class="card">
+    <div class="engine-note" id="engine-note" aria-live="polite">
+      <span aria-hidden="true">ⓘ</span>
+      <div>
+        <strong id="engine-title"></strong>
+        <p id="engine-description"></p>
+      </div>
+    </div>
+    <div class="field">
+      <label for="voice">Voice</label>
+      <select id="voice"></select>
+      <span class="field-note" id="voice-note"></span>
+    </div>
+    <div id="language-field" class="field">
+      <label for="language">Language</label>
+      <select id="language"></select>
+    </div>
     <div class="field">
       <div class="label-row">
         <label for="speed">Speech speed</label>
@@ -467,6 +503,13 @@
     currentVoice: document.getElementById("current-voice"),
     currentSpeed: document.getElementById("current-speed"),
     engine: document.getElementById("engine"),
+    engineNote: document.getElementById("engine-note"),
+    engineTitle: document.getElementById("engine-title"),
+    engineDescription: document.getElementById("engine-description"),
+    voice: document.getElementById("voice"),
+    voiceNote: document.getElementById("voice-note"),
+    languageField: document.getElementById("language-field"),
+    language: document.getElementById("language"),
     speed: document.getElementById("speed"),
     speedValue: document.getElementById("speed-value"),
     autoRead: document.getElementById("auto-read"),
@@ -481,6 +524,7 @@
   let hydrated = false;
   let formDirty = false;
   let latestState = null;
+  let settingsOptions = null;
 
   function requestJson(url, options) {
     return fetch(url, options).then(async (response) => {
@@ -490,7 +534,46 @@
     });
   }
 
+  function populateSelect(select, options, selectedValue) {
+    select.replaceChildren(...options.map(({ value, label }) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      return option;
+    }));
+    select.value = selectedValue;
+  }
+
+  function renderEngineOptions(engine) {
+    const options = settingsOptions?.engines || [];
+    populateSelect(elements.engine, options.map(({ value, label }) => ({ value, label })), engine);
+    const selected = options.find((option) => option.value === engine) || options[0];
+    if (!selected) return;
+
+    elements.engineNote.hidden = !selected.description;
+    elements.engineTitle.textContent = selected.noteTitle || selected.label;
+    elements.engineDescription.textContent = selected.description || "";
+    populateSelect(elements.voice, selected.voices, selected.voices[0]?.value);
+    elements.voice.disabled = selected.voices.length <= 1;
+    elements.voiceNote.textContent = selected.voices.length <= 1
+      ? "This is the only voice currently available for this engine."
+      : "";
+    const languageOptions = options.flatMap(({ languages = [] }) => languages)
+      .filter((option, index, list) => list.findIndex(({ value }) => value === option.value) === index);
+    populateSelect(
+      elements.language,
+      languageOptions,
+      elements.language.value || languageOptions[0]?.value
+    );
+    elements.languageField.hidden = !selected.languages?.length;
+  }
+
   function hydrateForm(config) {
+    renderEngineOptions(config.engine || "kokoro");
+    elements.voice.value = config.voice;
+    if (settingsOptions?.engines.some((engine) => engine.languages?.length)) {
+      elements.language.value = config.lang || elements.language.value;
+    }
     elements.engine.value = config.engine || "kokoro";
     elements.speed.value = config.speed;
     elements.speedValue.textContent = `${Number(config.speed).toFixed(2)}x`;
@@ -502,6 +585,7 @@
 
   function renderState(state) {
     latestState = state;
+    settingsOptions = state.settings_options || settingsOptions;
     const config = state.config || {};
     const phaseLabels = {
       setup: "Bro is warming up",
@@ -536,6 +620,8 @@
   function formConfig() {
     return {
       engine: elements.engine.value,
+      voice: elements.voice.value,
+      lang: elements.language.value,
       speed: Number(elements.speed.value),
       auto_read: elements.autoRead.checked,
       active_session_only: elements.activeSessionOnly.checked,
@@ -554,6 +640,13 @@
   });
 
   elements.engine.addEventListener("change", () => {
+    const selected = settingsOptions?.engines.find((engine) => engine.value === elements.engine.value);
+    renderEngineOptions(elements.engine.value);
+    if (selected?.languages?.length) {
+      elements.language.value = selected.languages.some(({ value }) => value === elements.language.value)
+        ? elements.language.value
+        : selected.languages[0].value;
+    }
     formDirty = true;
   });
 
@@ -563,6 +656,12 @@
     elements.samplePhrase,
   ]) {
     control.addEventListener("input", () => {
+      formDirty = true;
+    });
+  }
+
+  for (const control of [elements.voice, elements.language]) {
+    control.addEventListener("change", () => {
       formDirty = true;
     });
   }
@@ -591,7 +690,10 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: elements.samplePhrase.value,
+          engine: elements.engine.value,
+          voice: elements.voice.value,
           speed: Number(elements.speed.value),
+          lang: elements.language.value,
         }),
       });
       showActionStatus("That hit.");
